@@ -49,6 +49,7 @@ NvHTTP::NvHTTP(NvAddress address, uint16_t httpsPort, QSslCertificate serverCert
 NvHTTP::NvHTTP(NvComputer* computer, QNetworkAccessManager* nam) :
     NvHTTP(computer->activeAddress, computer->activeHttpsPort, computer->serverCert, !computer->isNvidiaServerSoftware, nam, computer->uuid)
 {
+    m_RequireHttps = computer->managed;
 }
 
 void NvHTTP::setServerCert(QSslCertificate serverCert)
@@ -163,8 +164,7 @@ NvHTTP::getServerInfo(NvLogLevel logLevel, bool fastFail)
         }
         catch (const GfeHttpResponseException& e)
         {
-            if (e.getStatusCode() == 401)
-            {
+            if (e.getStatusCode() == 401 && !m_RequireHttps) {
                 // Certificate validation error, fallback to HTTP
                 serverInfo = openConnectionToString(m_BaseUrlHttp,
                                                     "serverinfo",
@@ -172,9 +172,7 @@ NvHTTP::getServerInfo(NvLogLevel logLevel, bool fastFail)
                                                     fastFail ? FAST_FAIL_TIMEOUT_MS : REQUEST_TIMEOUT_MS,
                                                     logLevel);
                 verifyResponseStatus(serverInfo);
-            }
-            else
-            {
+            } else {
                 // Rethrow real errors
                 throw e;
             }
@@ -182,6 +180,10 @@ NvHTTP::getServerInfo(NvLogLevel logLevel, bool fastFail)
     }
     else
     {
+        if (m_RequireHttps) {
+            throw GfeHttpResponseException(401,
+                                           tr("Managed hosts require a trusted HTTPS connection."));
+        }
         // Only use HTTP prior to pairing or fetching HTTPS port
         serverInfo = openConnectionToString(m_BaseUrlHttp,
                                             "serverinfo",
@@ -742,6 +744,23 @@ NvHTTP::openConnection(QUrl baseUrl,
     auto sslErrorsConnection = connect(m_Nam, &QNetworkAccessManager::sslErrors, this, &NvHTTP::handleSslErrors);
     QNetworkReply* reply = m_Nam->get(request);
 
+    // sslErrors() is not emitted when the pinned certificate is trusted by the
+    // system. Check the leaf certificate as soon as the TLS handshake completes,
+    // before Qt transmits the request. The final check below also covers reused
+    // connections, for which Qt may not emit encrypted().
+    const bool requirePinnedCertificate =
+        baseUrl.scheme().compare(QStringLiteral("https"), Qt::CaseInsensitive) == 0 &&
+        !m_ServerCert.isNull();
+    const QByteArray pinnedCertificate = m_ServerCert.toDer();
+    if (requirePinnedCertificate) {
+        connect(reply, &QNetworkReply::encrypted, reply, [reply, pinnedCertificate]() {
+            if (reply->sslConfiguration().peerCertificate().toDer() != pinnedCertificate) {
+                reply->setProperty("moonlightCertificatePinMismatch", true);
+                reply->abort();
+            }
+        });
+    }
+
     // Run the request with a timeout if requested
     QEventLoop loop;
     bool oversized = false;
@@ -778,6 +797,17 @@ NvHTTP::openConnection(QUrl baseUrl,
     m_Nam->clearAccessCache();
 #endif
     disconnect(sslErrorsConnection);
+
+    const QByteArray peerCertificate = reply->sslConfiguration().peerCertificate().toDer();
+    const bool certificatePinMismatch =
+        requirePinnedCertificate &&
+        (reply->property("moonlightCertificatePinMismatch").toBool() ||
+         (!peerCertificate.isEmpty() && peerCertificate != pinnedCertificate) ||
+         (reply->error() == QNetworkReply::NoError && peerCertificate.isEmpty()));
+    if (certificatePinMismatch) {
+        delete reply;
+        throw GfeHttpResponseException(401, "Server certificate mismatch");
+    }
 
     // Handle error
     if (oversized) {
@@ -869,6 +899,22 @@ NvHTTP::openJsonConnection(QUrl baseUrl,
                 m_Nam->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact)) :
                 m_Nam->get(request);
 
+    // A normally trusted pinned certificate produces no sslErrors(). Enforce
+    // the leaf pin before request data is sent, then check again after completion
+    // for a connection reused from QNetworkAccessManager's cache.
+    const bool requirePinnedCertificate =
+        baseUrl.scheme().compare(QStringLiteral("https"), Qt::CaseInsensitive) == 0 &&
+        !m_ServerCert.isNull();
+    const QByteArray pinnedCertificate = m_ServerCert.toDer();
+    if (requirePinnedCertificate) {
+        connect(reply, &QNetworkReply::encrypted, reply, [reply, pinnedCertificate]() {
+            if (reply->sslConfiguration().peerCertificate().toDer() != pinnedCertificate) {
+                reply->setProperty("moonlightCertificatePinMismatch", true);
+                reply->abort();
+            }
+        });
+    }
+
     QEventLoop loop;
     connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
     connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, &loop, &QEventLoop::quit);
@@ -892,6 +938,17 @@ NvHTTP::openJsonConnection(QUrl baseUrl,
     m_Nam->clearAccessCache();
 #endif
     disconnect(sslErrorsConnection);
+
+    const QByteArray peerCertificate = reply->sslConfiguration().peerCertificate().toDer();
+    const bool certificatePinMismatch =
+        requirePinnedCertificate &&
+        (reply->property("moonlightCertificatePinMismatch").toBool() ||
+         (!peerCertificate.isEmpty() && peerCertificate != pinnedCertificate) ||
+         (reply->error() == QNetworkReply::NoError && peerCertificate.isEmpty()));
+    if (certificatePinMismatch) {
+        delete reply;
+        throw GfeHttpResponseException(401, "Server certificate mismatch");
+    }
 
     if (reply->error() != QNetworkReply::NoError)
     {

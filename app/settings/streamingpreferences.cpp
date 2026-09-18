@@ -10,6 +10,19 @@
 
 #include <QtDebug>
 
+namespace {
+class EnglishSourceTranslator final : public QTranslator
+{
+public:
+    bool isEmpty() const override { return false; }
+    QString translate(const char*, const char* sourceText, const char* = nullptr,
+                      int = -1) const override
+    {
+        return QString::fromUtf8(sourceText);
+    }
+};
+}
+
 #define SER_STREAMSETTINGS "streamsettings"
 #define SER_WIDTH "width"
 #define SER_HEIGHT "height"
@@ -548,8 +561,10 @@ bool StreamingPreferences::retranslate()
     }
 #endif
 
-    QTranslator* newTranslator = new QTranslator();
+    QTranslator* newTranslator =
+        language == LANG_EN ? new EnglishSourceTranslator() : new QTranslator();
     QString languageSuffix = getSuffixFromLanguage(language);
+    QLocale::setDefault(QLocale(languageSuffix));
 
     // Remove the old translator, even if we can't load a new one.
     // Otherwise we'll be stuck with the old translated values instead
@@ -560,13 +575,12 @@ bool StreamingPreferences::retranslate()
         translator = nullptr;
     }
 
-    if (newTranslator->load(QString(":/languages/qml_") + languageSuffix)) {
+    if (language == LANG_EN || newTranslator->load(QString(":/languages/qml_") + languageSuffix)) {
         qInfo() << "Successfully loaded translation for" << languageSuffix;
 
         translator = newTranslator;
         QCoreApplication::installTranslator(translator);
-    }
-    else {
+    } else {
         qInfo() << "No translation available for" << languageSuffix;
         delete newTranslator;
     }

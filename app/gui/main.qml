@@ -731,8 +731,18 @@ ApplicationWindow {
             }
 
             NavigableToolButton {
+                iconSource: "qrc:/res/fluent/tb-network.svg"
+                visible: !(stackView.currentItem instanceof AppView)
+                ToolTip.delay: 500
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Backend sign-in")
+                Accessible.name: qsTr("Backend sign-in")
+                onClicked: navigateTo("qrc:/gui/ManagedView.qml", ManagedView)
+            }
+
+            NavigableToolButton {
                 id: displaySettingsButton
-                visible: stackView.currentItem instanceof AppView
+                visible: stackView.currentItem instanceof AppView && stackView.currentItem.showDisplaySettings
 
                 iconSource: "qrc:/res/fluent/tb-display.svg"
 

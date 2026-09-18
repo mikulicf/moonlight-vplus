@@ -1,5 +1,7 @@
 import QtQuick
+import QtQuick.Controls
 import QtTest
+import "../../app/gui"
 import "../../app/gui/settings"
 
 TestCase {
@@ -24,6 +26,20 @@ TestCase {
         }
     }
 
+    DialogButtonBox {
+        id: translatedButtonBox
+        standardButtons: DialogButtonBox.Ok | DialogButtonBox.Cancel |
+                         DialogButtonBox.Close | DialogButtonBox.Help |
+                         DialogButtonBox.Yes | DialogButtonBox.No
+    }
+
+    StandardButtonLabels {
+        id: translatedButtonLabels
+        buttonBox: translatedButtonBox
+        language: 0
+        englishLanguage: 1
+    }
+
     function test_compiledChinese() {
         compare(qsTranslate("SettingsView", "Settings"), "\u8bbe\u7f6e")
         compare(qsTranslate("SettingsView", "Software Settings"), "\u8f6f\u4ef6\u8bbe\u7f6e")
@@ -31,6 +47,32 @@ TestCase {
         compare(qsTranslate("AboutSettingsPage", "About"), "\u5173\u4e8e")
         verify(qsTranslate("OverlayMenuPanel", "Connected — select to release") !== "Connected — select to release")
         verify(qsTranslate("StylusReplayTest", "Stylus replay stopped.") !== "Stylus replay stopped.")
+    }
+
+    function test_standardButtonsUseAppTranslation() {
+        translatedButtonLabels.apply()
+        compare(translatedButtonBox.standardButton(DialogButtonBox.Ok).text, "\u786e\u5b9a")
+        compare(translatedButtonBox.standardButton(DialogButtonBox.Cancel).text, "\u53d6\u6d88")
+        compare(translatedButtonBox.standardButton(DialogButtonBox.Close).text, "\u5173\u95ed")
+        compare(translatedButtonBox.standardButton(DialogButtonBox.Help).text, "\u5e2e\u52a9")
+        compare(translatedButtonBox.standardButton(DialogButtonBox.Yes).text, "\u662f")
+        compare(translatedButtonBox.standardButton(DialogButtonBox.No).text, "\u5426")
+
+        translatedButtonLabels.language = 1
+        translatedButtonLabels.apply()
+        compare(translatedButtonBox.standardButton(DialogButtonBox.Ok).text, "OK")
+        compare(translatedButtonBox.standardButton(DialogButtonBox.Cancel).text, "Cancel")
+        compare(translatedButtonBox.standardButton(DialogButtonBox.Close).text, "Close")
+        compare(translatedButtonBox.standardButton(DialogButtonBox.Help).text, "Help")
+        compare(translatedButtonBox.standardButton(DialogButtonBox.Yes).text, "Yes")
+        compare(translatedButtonBox.standardButton(DialogButtonBox.No).text, "No")
+    }
+
+    function test_standardButtonMnemonicRemoval() {
+        compare(translatedButtonLabels.removeMnemonics("&Yes"), "Yes")
+        compare(translatedButtonLabels.removeMnemonics("Save && Close"), "Save & Close")
+        compare(translatedButtonLabels.removeMnemonics("\u662f(&Y)"), "\u662f")
+        compare(translatedButtonLabels.removeMnemonics("\u5426\uff08&N\uff09"), "\u5426")
     }
 
     function test_titlesFit_data() {

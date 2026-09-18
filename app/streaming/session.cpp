@@ -4799,9 +4799,12 @@ void Session::exec()
     StreamUtils::enterAsyncLoggingMode();
 
     // Hijack this thread to be the SDL main thread. Pump Qt periodically only
-    // while transient streaming UI is active; clipboard sync runs in a helper
-    // process with its own Qt event loop and is serviced via pipe polling below.
+    // while transient streaming UI is active. Managed streams also need a slow
+    // pump for backend lease renewal and network replies, even with an idle or
+    // hidden overlay. Clipboard sync has its own helper-process event loop.
     constexpr Uint32 QT_UI_EVENT_PUMP_INTERVAL_MS = 10;
+    constexpr Uint32 QT_MANAGED_EVENT_PUMP_INTERVAL_MS = 250;
+    const bool managedStream = m_Computer->managed;
     Uint32 lastQtEventPumpTicks = 0;
     auto qtUiNeedsEventProcessing = [this]() {
         // The floating button remains visible while the stream is focused. Treating
@@ -4822,14 +4825,18 @@ void Session::exec()
                false;
 #endif
     };
-    auto processQtEventsDuringStream = [this, &lastQtEventPumpTicks,
+    auto processQtEventsDuringStream = [this, managedStream, QT_UI_EVENT_PUMP_INTERVAL_MS,
+                                        QT_MANAGED_EVENT_PUMP_INTERVAL_MS, &lastQtEventPumpTicks,
                                         &qtUiNeedsEventProcessing](bool force = false) {
-        if (!qtUiNeedsEventProcessing()) {
+        const bool uiActive = qtUiNeedsEventProcessing();
+        if (!uiActive && !managedStream) {
             return;
         }
 
         const Uint32 now = SDL_GetTicks();
-        if (!force && now - lastQtEventPumpTicks < QT_UI_EVENT_PUMP_INTERVAL_MS) {
+        const Uint32 interval =
+            uiActive ? QT_UI_EVENT_PUMP_INTERVAL_MS : QT_MANAGED_EVENT_PUMP_INTERVAL_MS;
+        if (!force && now - lastQtEventPumpTicks < interval) {
             return;
         }
         lastQtEventPumpTicks = now;
@@ -4949,6 +4956,9 @@ void Session::exec()
         int waitTimeoutMs = (m_ClipboardHelper != nullptr && m_ClipboardHelper->isRunning()) ? 100 : 1000;
         if (qtUiNeedsEventProcessing()) {
             waitTimeoutMs = qMin(waitTimeoutMs, static_cast<int>(QT_UI_EVENT_PUMP_INTERVAL_MS));
+        } else if (managedStream) {
+            waitTimeoutMs =
+                qMin(waitTimeoutMs, static_cast<int>(QT_MANAGED_EVENT_PUMP_INTERVAL_MS));
         }
         if (const int toastDelayMs = m_Toast ? m_Toast->nextEventDelayMs() : -1;
                 toastDelayMs >= 0) {

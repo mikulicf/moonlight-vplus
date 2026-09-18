@@ -172,6 +172,7 @@ public:
     void setHttpsPort(uint16_t port);
     void setTrueUid(bool useTrueUid);
     void setHostUuid(QString uuid);
+    void requireHttps(bool required) { m_RequireHttps = required; }
 
     NvAddress address();
 
@@ -250,5 +251,6 @@ private:
     QNetworkAccessManager* m_Nam;
     QSslCertificate m_ServerCert;
     bool m_UseTrueUid;
+    bool m_RequireHttps = false;
     QString m_Uuid;
 };

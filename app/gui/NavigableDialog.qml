@@ -1,5 +1,6 @@
 import QtQuick 2.0
 import QtQuick.Controls
+import StreamingPreferences 1.0
 
 import "theme"
 
@@ -70,9 +71,19 @@ Dialog {
 
     // Replace FluentWinUI3's rounded button-area background and pill buttons.
     // NavigableMessageDialog overrides this footer to support helpRequested.
+    property QtObject standardButtonLabels: StandardButtonLabels {
+        buttonBox: dialogButtonBox
+        language: StreamingPreferences.language
+        englishLanguage: StreamingPreferences.LANG_EN
+    }
+
     footer: DialogButtonBox {
+        id: dialogButtonBox
+
         visible: count > 0
         standardButtons: control.standardButtons
+
+        onStandardButtonsChanged: Qt.callLater(function() { standardButtonLabels.apply() })
 
         padding: Theme.spaceXl
         topPadding: 0

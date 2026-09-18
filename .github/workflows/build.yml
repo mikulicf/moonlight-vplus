@@ -113,7 +113,7 @@ jobs:
         echo "Formatting baseline: $BASE (event=$EVENT_NAME)"
         # Report formatting changes only for touched lines, without changing the worktree.
         # Clean results use messages such as 'no modified files to format'.
-        OUTPUT=$(git clang-format --diff --style file "$BASE" 2>&1)
+        OUTPUT=$(git clang-format --diff --style file --extensions c,cc,cpp,cxx,h,hpp,mm "$BASE" 2>&1)
         case "$OUTPUT" in
           none|*"no modified files to format"|*"clang-format did not modify any files")
             echo "Formatting check passed"

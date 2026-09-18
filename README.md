@@ -4,6 +4,14 @@ This is the independently maintained [mikulicf fork](https://github.com/mikulicf
 
 See [external services and dependencies](docs/external-services.md) and [tracking both upstreams](docs/upstream-sync.md).
 
+## Self-hosted managed access
+
+The optional [managed backend and host agent](control/README.md) provide username/password sign-in and per-user computer assignments. Open **Backend sign-in** in the client and enter your deployment's HTTPS URL. The URL starts empty; no deployment address, account, or credential is built in. Linux Docker deployment files and a browser administration page are included.
+
+Managed connections require [Apollo Managed](https://github.com/mikulicf/apollo-managed), which enforces expiring client-certificate grants at the host. Video, audio, and input connect directly to the host. The backend does not relay streams or automatically traverse routers; configure reachability for each deployment. Regular paired hosts remain available separately.
+
+For hosts offering Desktop and Virtual Display, the connection page presents a display choice. **Existing display** shares the host desktop; **Virtual display** asks Apollo to create a software monitor for the stream. Neither option creates a separate Windows login or isolates users sharing that desktop.
+
 [Documentation](docs/architecture.md)
 
 [![Build](https://img.shields.io/github/actions/workflow/status/mikulicf/moonlight-vplus/build.yml?branch=master)](https://github.com/mikulicf/moonlight-vplus/actions/workflows/build.yml?query=branch%3Amaster)

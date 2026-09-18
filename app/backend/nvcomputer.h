@@ -100,6 +100,10 @@ public:
     };
 
     // Ephemeral traits
+    bool managed = false;
+    bool managedAccessActive = false;
+    QString managedBackend;
+    QString managedLease;
     ComputerState state;
     PairState pairState;
     NvAddress activeAddress;

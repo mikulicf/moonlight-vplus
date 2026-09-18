@@ -54,6 +54,12 @@ int AppModel::getRunningAppId()
     return m_CurrentGameId;
 }
 
+QString AppModel::getComputerUuid() const
+{
+    QReadLocker locker(&m_Computer->lock);
+    return m_Computer->uuid;
+}
+
 QString AppModel::getRunningAppName()
 {
     if (m_CurrentGameId != 0) {

@@ -1,6 +1,5 @@
 import QtQuick 2.9
 import QtQuick.Controls
-import Qt.labs.platform 1.1
 import "."
 import ".."
 import "../theme"
@@ -312,13 +311,12 @@ Column {
         }
     }
 
-    FileDialog {
+    ManagedFileDialog {
         id: localBackgroundFileDialog
         title: qsTr("Choose a background image")
-        fileMode: FileDialog.OpenFile
         nameFilters: [qsTr("Image files (*.jpg *.jpeg *.png *.webp *.bmp)")]
-        onAccepted: {
-            settingsPage.applyLocalBackgroundImage(file.toString())
+        onAccepted: function(fileUrl) {
+            settingsPage.applyLocalBackgroundImage(fileUrl.toString())
         }
     }
 

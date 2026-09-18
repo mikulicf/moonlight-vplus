@@ -1,0 +1,10 @@
+/data/
+/dist/
+.env
+*.db
+*.db-shm
+*.db-wal
+*.exe
+*.key
+*.pem
+agent.json

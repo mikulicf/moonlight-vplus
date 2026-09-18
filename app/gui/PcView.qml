@@ -2,7 +2,6 @@ import QtQuick 2.9
 import QtQuick.Controls
 import QtQuick.Layouts 1.3
 import QtQuick.Window 2.2
-import Qt.labs.platform 1.1
 import QtCore
 
 import ComputerModel 1.0
@@ -967,28 +966,15 @@ CenteredGridView {
     }
 
     // File save dialog.
-    FileDialog {
+    ManagedFileDialog {
         id: saveFileDialog
         title: qsTr("Choose where to save")
         nameFilters: [qsTr("Image files (*.jpg *.jpeg *.png *.webp)")]
-        fileMode: FileDialog.SaveFile
+        saveMode: true
+        defaultSuffix: "jpg"
 
-        currentFile: {
-            var timestamp = new Date().getTime()
-            // Extract the file extension from the URL.
-            var extension = ".jpg"
-            if (backgroundImage.currentImageUrl) {
-                var urlPath = backgroundImage.currentImageUrl.toString()
-                var extMatch = urlPath.match(/\.(jpg|jpeg|png|webp)($|\?)/i)
-                if (extMatch) {
-                    extension = "." + extMatch[1].toLowerCase()
-                }
-            }
-            return "file:///setu_" + timestamp + extension
-        }
-
-        onAccepted: {
-            var finalPath = saveFileDialog.fileUrl || saveFileDialog.currentFile || saveFileDialog.file
+        onAccepted: function(fileUrl) {
+            var finalPath = fileUrl
 
             console.log("Original path: " + finalPath)
 
