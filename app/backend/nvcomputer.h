@@ -100,6 +100,7 @@ public:
     };
 
     // Ephemeral traits
+    bool managed = false;
     ComputerState state;
     PairState pairState;
     NvAddress activeAddress;

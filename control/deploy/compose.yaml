@@ -1,0 +1,62 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command:
+      - serve
+      - --db=/data/control.db
+      - --listen=127.0.0.1:8080
+      - --public-url=https://${BACKEND_HOSTNAME:?BACKEND_HOSTNAME must be set}
+      - --behind-proxy
+      - --trusted-proxies=127.0.0.1/32,::1/128
+    environment:
+      PUBLIC_URL: https://${BACKEND_HOSTNAME:?BACKEND_HOSTNAME must be set}
+    volumes:
+      - backend-data:/data
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  caddy:
+    image: caddy:2-alpine
+    network_mode: service:backend
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      BACKEND_HOSTNAME: ${BACKEND_HOSTNAME:?BACKEND_HOSTNAME must be set}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    restart: unless-stopped
+
+volumes:
+  backend-data:
+  caddy-data:
+  caddy-config:

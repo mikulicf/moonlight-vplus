@@ -25,6 +25,12 @@ NavigableDialog {
 
     // Inherit NavigableDialog's square Panel, hard shadow, and accent bar.
 
+    property QtObject messageButtonLabels: StandardButtonLabels {
+        buttonBox: dialogButtonBox
+        language: StreamingPreferences.language
+        englishLanguage: StreamingPreferences.LANG_EN
+    }
+
     RowLayout {
         spacing: Theme.spaceLg
 
@@ -89,6 +95,8 @@ NavigableDialog {
     footer: DialogButtonBox {
         id: dialogButtonBox
         standardButtons: dialog.standardButtons
+
+        onStandardButtonsChanged: Qt.callLater(function() { messageButtonLabels.apply() })
 
         padding: Theme.spaceXl
         topPadding: 0

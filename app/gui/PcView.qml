@@ -2,7 +2,7 @@ import QtQuick 2.9
 import QtQuick.Controls
 import QtQuick.Layouts 1.3
 import QtQuick.Window 2.2
-import Qt.labs.platform 1.1
+import QtQuick.Dialogs as FileDialogs
 import QtCore
 
 import ComputerModel 1.0
@@ -967,13 +967,13 @@ CenteredGridView {
     }
 
     // File save dialog.
-    FileDialog {
+    FileDialogs.FileDialog {
         id: saveFileDialog
         title: qsTr("Choose where to save")
         nameFilters: [qsTr("Image files (*.jpg *.jpeg *.png *.webp)")]
-        fileMode: FileDialog.SaveFile
+        fileMode: FileDialogs.FileDialog.SaveFile
 
-        currentFile: {
+        selectedFile: {
             var timestamp = new Date().getTime()
             // Extract the file extension from the URL.
             var extension = ".jpg"
@@ -988,7 +988,7 @@ CenteredGridView {
         }
 
         onAccepted: {
-            var finalPath = saveFileDialog.fileUrl || saveFileDialog.currentFile || saveFileDialog.file
+            var finalPath = saveFileDialog.selectedFile
 
             console.log("Original path: " + finalPath)
 

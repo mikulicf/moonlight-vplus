@@ -86,6 +86,7 @@ static QString getStartupApplicationDir(const char* argv0)
 #include "gui/appmodel.h"
 #include "backend/autoupdatechecker.h"
 #include "backend/computermanager.h"
+#include "backend/managedbackend.h"
 #include "backend/systemproperties.h"
 #include "backend/usbforwardingenvironment.h"
 #include "backend/usbforwardingbackend.h"
@@ -1284,6 +1285,12 @@ int main(int argc, char *argv[])
                                               [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
                                                   return new ComputerManager(StreamingPreferences::get(qmlEngine));
                                               });
+    qmlRegisterSingletonType<ManagedBackend>(
+        "ManagedBackend", 1, 0, "ManagedBackend", [](QQmlEngine* engine, QJSEngine*) -> QObject* {
+            auto manager = engine->singletonInstance<ComputerManager*>(
+                qmlTypeId("ComputerManager", 1, 0, "ComputerManager"));
+            return new ManagedBackend(manager);
+        });
     qmlRegisterSingletonType<AutoUpdateChecker>("AutoUpdateChecker", 1, 0,
                                                 "AutoUpdateChecker",
                                                 [](QQmlEngine*, QJSEngine*) -> QObject* {
@@ -1540,6 +1547,11 @@ int main(int argc, char *argv[])
         engine.load(QUrl(QStringLiteral("qrc:/gui/main.qml")));
         if (engine.rootObjects().isEmpty())
             return -1;
+
+        // QQmlApplicationEngine installs Qt's system-locale translator while
+        // loading. Reinstall the selected app translator with higher priority
+        // so app-owned standard dialog captions follow the language setting.
+        StreamingPreferences::get(&engine)->retranslate();
 
 #ifdef Q_OS_DARWIN
         // Extend the native 28-32-point titlebar to our 56-pixel toolbar. Center the

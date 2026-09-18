@@ -5,6 +5,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Window 2.2
+import QtCore
 
 import AppModel 1.0
 import ComputerManager 1.0
@@ -28,6 +29,16 @@ CenteredGridView {
     property AppModel appModel : createModel()
     property bool activated
     property bool showHiddenGames
+
+    // Apollo's stock app list exposes its two desktop connection modes as if
+    // they were unrelated applications. Present those two entries as one
+    // connection decision while leaving custom app/game lists unchanged.
+    property bool desktopConnectionMode: false
+    property int desktopAppIndex: -1
+    property int virtualDisplayAppIndex: -1
+    property int desktopRunningAppId: 0
+    property string desktopRunningAppName: ""
+    readonly property bool showDisplaySettings: !desktopConnectionMode
     property bool showGames
 
     id: appGrid
@@ -36,6 +47,16 @@ CenteredGridView {
     topMargin: 72   // 56-pixel toolbar plus one spacing unit.
     bottomMargin: 5
     cellWidth: 230; cellHeight: 297;
+
+    onActiveFocusChanged: {
+        if (activeFocus && desktopConnectionMode &&
+                !existingDisplayChoice.activeFocus &&
+                !virtualDisplayChoice.activeFocus &&
+                !desktopConnectButton.activeFocus &&
+                !desktopStopButton.activeFocus) {
+            desktopConnectButton.forceActiveFocus(Qt.TabFocusReason)
+        }
+    }
 
     // Selected display UI ID: empty for none, vdd for VDD, otherwise a unique physical ID.
     property string selectedDisplayId: ""
@@ -49,6 +70,109 @@ CenteredGridView {
     property bool hasMultipleAddresses: appModel.hasMultipleConnectionAddresses()
     // Current active address information.
     property var activeAddressInfo: appModel.getActiveAddressInfo()
+
+    Settings {
+        id: desktopConnectionSettings
+        category: "desktopConnection/" + appModel.getComputerUuid()
+        property string preferredDisplay: "existing"
+    }
+
+    function normalizedAppName(appIndex) {
+        return String(appModel.data(appModel.index(appIndex, 0), nameRole)).trim().toLowerCase()
+    }
+
+    function refreshDesktopConnectionMode() {
+        var desktopIndex = -1
+        var virtualIndex = -1
+
+        if (appModel.rowCount() === 2) {
+            for (var i = 0; i < 2; ++i) {
+                var name = normalizedAppName(i)
+                if (name === "desktop") {
+                    desktopIndex = i
+                } else if (name === "virtual display") {
+                    virtualIndex = i
+                }
+            }
+        }
+
+        desktopAppIndex = desktopIndex
+        virtualDisplayAppIndex = virtualIndex
+        desktopConnectionMode = desktopIndex >= 0 && virtualIndex >= 0
+        desktopRunningAppId = appModel.getRunningAppId()
+        desktopRunningAppName = appModel.getRunningAppName()
+
+        if (desktopConnectionSettings.preferredDisplay !== "existing" &&
+                desktopConnectionSettings.preferredDisplay !== "virtual") {
+            desktopConnectionSettings.preferredDisplay = "existing"
+        }
+    }
+
+    function appIdAt(appIndex) {
+        return appIndex >= 0
+                ? appModel.data(appModel.index(appIndex, 0), appIdRole)
+                : 0
+    }
+
+    function selectedDesktopAppIndex() {
+        return desktopConnectionSettings.preferredDisplay === "virtual"
+                ? virtualDisplayAppIndex : desktopAppIndex
+    }
+
+    function beginAppSession(appIndex, displayTarget) {
+        if (appIndex < 0) {
+            return
+        }
+
+        var appModelIndex = appModel.index(appIndex, 0)
+        var runningId = appModel.getRunningAppId()
+        var component = Qt.createComponent("StreamSegue.qml")
+        var segue = component.createObject(stackView, {
+                                               "appName": appModel.data(appModelIndex, nameRole),
+                                               "boxArtUrl": appModel.data(appModelIndex, boxArtRole),
+                                               "session": appModel.createSessionForApp(appIndex, displayTarget),
+                                               "isResume": runningId === appModel.data(appModelIndex, appIdRole)
+                                           })
+        stackView.push(segue)
+    }
+
+    function launchAppAtIndex(appIndex, quitExistingApp, displayTarget) {
+        if (appIndex < 0) {
+            return
+        }
+
+        var appModelIndex = appModel.index(appIndex, 0)
+        var appId = appModel.data(appModelIndex, appIdRole)
+        var runningId = appModel.getRunningAppId()
+        if (runningId !== 0 && runningId !== appId) {
+            if (quitExistingApp) {
+                quitAppDialog.appName = appModel.getRunningAppName()
+                quitAppDialog.segueToStream = true
+                quitAppDialog.nextAppName = appModel.data(appModelIndex, nameRole)
+                quitAppDialog.nextAppIndex = appIndex
+                quitAppDialog.nextDisplayTarget = displayTarget
+                quitAppDialog.desktopWording = desktopConnectionMode
+                quitAppDialog.open()
+            }
+            return
+        }
+
+        beginAppSession(appIndex, displayTarget)
+    }
+
+    function launchDesktopSelection() {
+        // The Virtual Display app supplied by the host has its own launch
+        // behavior. Do not also force Moonlight's generic VDD display target.
+        launchAppAtIndex(selectedDesktopAppIndex(), true, "")
+    }
+
+    function stopDesktopApplication() {
+        quitAppDialog.appName = appModel.getRunningAppName()
+        quitAppDialog.segueToStream = false
+        quitAppDialog.nextDisplayTarget = ""
+        quitAppDialog.desktopWording = true
+        quitAppDialog.open()
+    }
 
     // Use AbstractButton so the only display/VDD selector participates in keyboard
     // and gamepad focus navigation; Rectangle plus MouseArea could not be reached.
@@ -117,6 +241,63 @@ CenteredGridView {
         Keys.onDownPressed: if (navDownItem) navDownItem.forceActiveFocus(Qt.TabFocusReason)
         // Nothing above the chips accepts focus; consume upward navigation.
         Keys.onUpPressed: {}
+    }
+
+    component DesktopChoice: AbstractButton {
+        id: choice
+
+        property string description: ""
+        property bool selected: false
+        property Item navUpItem: null
+        property Item navDownItem: null
+
+        implicitHeight: choiceText.implicitHeight + Theme.spaceLg * 2
+        hoverEnabled: true
+        activeFocusOnTab: true
+
+        HoverHandler {
+            cursorShape: Qt.PointingHandCursor
+        }
+
+        background: Panel {
+            fill: choice.selected ? Theme.accentSoft
+                                  : (choice.hovered ? Theme.surface2 : Theme.surface)
+            borderColor: choice.selected || choice.visualFocus
+                         ? Theme.accent : Theme.lineStrong
+            borderWidth: choice.visualFocus ? 2 : 1
+            accentBarWidth: choice.selected ? Theme.accentBar : 0
+        }
+
+        contentItem: Column {
+            id: choiceText
+            leftPadding: Theme.spaceLg
+            rightPadding: Theme.spaceLg
+            spacing: Theme.spaceXs
+
+            Text {
+                width: parent.width - parent.leftPadding - parent.rightPadding
+                text: choice.text
+                color: Theme.text
+                font.family: Theme.fontSans
+                font.pointSize: Theme.fontCardTitle
+                font.weight: Font.Bold
+                elide: Text.ElideRight
+            }
+
+            Text {
+                width: parent.width - parent.leftPadding - parent.rightPadding
+                text: choice.description
+                color: Theme.textDim
+                font.family: Theme.fontSans
+                font.pointSize: Theme.fontBody
+                wrapMode: Text.Wrap
+            }
+        }
+
+        Keys.onReturnPressed: clicked()
+        Keys.onEnterPressed: clicked()
+        Keys.onUpPressed: if (navUpItem) navUpItem.forceActiveFocus(Qt.TabFocusReason)
+        Keys.onDownPressed: if (navDownItem) navDownItem.forceActiveFocus(Qt.TabFocusReason)
     }
 
     // Load the display list.
@@ -282,6 +463,7 @@ CenteredGridView {
     }
 
     Component.onCompleted: {
+        refreshDesktopConnectionMode()
         // Don't show any highlighted item until interacting with them.
         // We do this here instead of onActivated to avoid losing the user's
         // selection when backing out of a different page of the app.
@@ -323,14 +505,17 @@ CenteredGridView {
         // drifted from NvComputer's actual currentGameId while we were
         // on another page (typically during a streaming session).
         appModel.forceSyncCurrentGame()
+        refreshDesktopConnectionMode()
         postActivationResyncTimer.kick()
 
         // Highlight the first item if a gamepad is connected
-        if (currentIndex === -1 && SdlGamepadKeyNavigation.getConnectedGamepads() > 0) {
+        if (desktopConnectionMode && SdlGamepadKeyNavigation.getConnectedGamepads() > 0) {
+            desktopConnectButton.forceActiveFocus(Qt.TabFocusReason)
+        } else if (currentIndex === -1 && SdlGamepadKeyNavigation.getConnectedGamepads() > 0) {
             currentIndex = 0
         }
 
-        if (!showGames && !showHiddenGames) {
+        if (!desktopConnectionMode && !showGames && !showHiddenGames) {
             // Check if there's a direct launch app
             var directLaunchAppIndex = model.getDirectLaunchAppIndex();
             if (directLaunchAppIndex >= 0) {
@@ -373,6 +558,8 @@ CenteredGridView {
 
         // Dim the app if it's hidden
         opacity: model.hidden ? 0.4 : 1.0
+        visible: !desktopConnectionMode
+        enabled: !desktopConnectionMode
 
         // Share one lift animation value between Panel and the separate content layer
         // so the two cannot become misaligned.
@@ -657,27 +844,7 @@ CenteredGridView {
 
         function launchOrResumeSelectedApp(quitExistingApp)
         {
-            var runningId = appModel.getRunningAppId()
-            if (runningId !== 0 && runningId !== model.appid) {
-                if (quitExistingApp) {
-                    quitAppDialog.appName = appModel.getRunningAppName()
-                    quitAppDialog.segueToStream = true
-                    quitAppDialog.nextAppName = model.name
-                    quitAppDialog.nextAppIndex = index
-                    quitAppDialog.open()
-                }
-
-                return
-            }
-
-            var component = Qt.createComponent("StreamSegue.qml")
-            var segue = component.createObject(stackView, {
-                                                   "appName": model.name,
-                                                   "boxArtUrl": model.boxart,
-                                                   "session": appModel.createSessionForApp(index, selectedDisplayTarget),
-                                                   "isResume": runningId === model.appid
-                                               })
-            stackView.push(segue)
+            launchAppAtIndex(index, quitExistingApp, selectedDisplayTarget)
         }
 
         onClicked: {
@@ -739,6 +906,8 @@ CenteredGridView {
         function doQuitGame() {
             quitAppDialog.appName = appModel.getRunningAppName()
             quitAppDialog.segueToStream = false
+            quitAppDialog.nextDisplayTarget = ""
+            quitAppDialog.desktopWording = false
             quitAppDialog.open()
         }
 
@@ -785,12 +954,185 @@ CenteredGridView {
         }
     }
 
+    Panel {
+        id: desktopConnectionPanel
+
+        anchors.centerIn: parent
+        anchors.verticalCenterOffset: topMargin / 2
+        width: Math.max(0, Math.min(680, appGrid.width - Theme.spaceXl * 2))
+        height: Math.min(desktopPanelContent.implicitHeight + Theme.spaceXl * 2,
+                         Math.max(0, appGrid.height - topMargin - Theme.spaceLg * 2))
+        visible: desktopConnectionMode
+        enabled: visible
+        z: 2
+        fill: Theme.surfaceLayer
+        borderColor: Theme.lineStrong
+        accentBarColor: Theme.accent
+        accentBarWidth: Theme.accentBar
+
+        Flickable {
+            id: desktopPanelFlickable
+            anchors {
+                fill: parent
+                margins: Theme.spaceXl
+            }
+            contentWidth: width
+            contentHeight: desktopPanelContent.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { }
+
+            function revealItem(item) {
+                var point = item.mapToItem(desktopPanelContent, 0, 0)
+                var itemTop = point.y
+                var itemBottom = itemTop + item.height
+                if (itemTop < contentY) {
+                    contentY = itemTop
+                } else if (itemBottom > contentY + height) {
+                    contentY = Math.max(0, Math.min(contentHeight - height,
+                                                   itemBottom - height))
+                }
+            }
+
+            Column {
+                id: desktopPanelContent
+
+                width: desktopPanelFlickable.width
+                spacing: Theme.spaceLg
+
+            Column {
+                width: parent.width
+                spacing: Theme.spaceXs
+
+                Text {
+                    width: parent.width
+                    text: qsTr("Connect to desktop")
+                    color: Theme.text
+                    font.family: Theme.fontSans
+                    font.pointSize: Theme.fontHeroTitle
+                    font.weight: Font.ExtraBold
+                    font.capitalization: Font.AllUppercase
+                    font.letterSpacing: Theme.trackingTight(Theme.fontHeroTitle)
+                    wrapMode: Text.Wrap
+                }
+
+                Text {
+                    width: parent.width
+                    text: qsTr("Choose where the host should show your remote desktop. This choice is remembered for this computer.")
+                    color: Theme.textDim
+                    font.family: Theme.fontSans
+                    font.pointSize: Theme.fontBody
+                    lineHeight: 1.2
+                    wrapMode: Text.Wrap
+                }
+            }
+
+                Column {
+                    width: parent.width
+                    spacing: Theme.spaceSm
+
+                DesktopChoice {
+                    id: existingDisplayChoice
+                    width: parent.width
+                    text: qsTr("Existing display")
+                    description: qsTr("Use the display setup already provided by the host.")
+                    selected: desktopConnectionSettings.preferredDisplay === "existing"
+                    navDownItem: virtualDisplayChoice
+                    onClicked: desktopConnectionSettings.preferredDisplay = "existing"
+                    onActiveFocusChanged: if (activeFocus) desktopPanelFlickable.revealItem(this)
+                }
+
+                DesktopChoice {
+                    id: virtualDisplayChoice
+                    width: parent.width
+                    text: qsTr("Virtual display")
+                    description: qsTr("Ask the host to create a separate display in this same Windows session.")
+                    selected: desktopConnectionSettings.preferredDisplay === "virtual"
+                    navUpItem: existingDisplayChoice
+                    navDownItem: desktopConnectButton
+                    onClicked: desktopConnectionSettings.preferredDisplay = "virtual"
+                    onActiveFocusChanged: if (activeFocus) desktopPanelFlickable.revealItem(this)
+                }
+            }
+
+            Text {
+                width: parent.width
+                text: qsTr("The host may choose a virtual display automatically when no physical display is available.")
+                color: Theme.textFaint
+                font.family: Theme.fontMono
+                font.pointSize: Theme.fontCaption
+                wrapMode: Text.Wrap
+            }
+
+            Rectangle {
+                width: parent.width
+                height: 1
+                color: Theme.line
+            }
+
+            Column {
+                width: parent.width
+                spacing: Theme.spaceSm
+
+                MicroLabel {
+                    width: parent.width
+                    visible: desktopRunningAppId !== 0
+                    height: visible ? implicitHeight : 0
+                    color: Theme.acid
+                    text: qsTr("Remote application running: %1").arg(desktopRunningAppName)
+                }
+
+                Text {
+                    width: parent.width
+                    text: qsTr("Disconnect ends the stream. Stop remote application asks the host to end the remote app.")
+                    color: Theme.textDim
+                    font.family: Theme.fontSans
+                    font.pointSize: Theme.fontBody
+                    wrapMode: Text.Wrap
+                }
+
+                    HardButton {
+                        id: desktopConnectButton
+                        width: parent.width
+                        height: 44
+                        primary: true
+                        text: desktopRunningAppId === appIdAt(selectedDesktopAppIndex())
+                              ? qsTr("Resume") : qsTr("Connect")
+
+                        onClicked: launchDesktopSelection()
+                        onActiveFocusChanged: if (activeFocus) desktopPanelFlickable.revealItem(this)
+                        Keys.onUpPressed: virtualDisplayChoice.forceActiveFocus(Qt.TabFocusReason)
+                        Keys.onDownPressed: {
+                            if (desktopStopButton.visible) {
+                                desktopStopButton.forceActiveFocus(Qt.TabFocusReason)
+                            }
+                        }
+                    }
+
+                    HardButton {
+                        id: desktopStopButton
+                        width: parent.width
+                        height: visible ? 40 : 0
+                        visible: desktopRunningAppId !== 0
+                        text: qsTr("Stop remote application")
+                        palette.buttonText: Theme.danger
+
+                        onClicked: stopDesktopApplication()
+                        onActiveFocusChanged: if (activeFocus) desktopPanelFlickable.revealItem(this)
+                        Keys.onUpPressed: desktopConnectButton.forceActiveFocus(Qt.TabFocusReason)
+                        Keys.onDownPressed: {}
+                    }
+                }
+            }
+        }
+    }
+
     // Empty state: large Manrope 800 heading and dim DM Mono supporting text.
     Column {
         anchors.centerIn: parent
         width: Math.min(parent.width - Theme.spaceXl * 2, 520)
         spacing: Theme.spaceMd
-        visible: appGrid.count === 0
+        visible: appGrid.count === 0 && !desktopConnectionMode
 
         Text {
             width: parent.width
@@ -846,7 +1188,14 @@ CenteredGridView {
         property bool segueToStream : false
         property string nextAppName: ""
         property int nextAppIndex: 0
-        text:qsTr("Are you sure you want to quit %1? Any unsaved progress will be lost.").arg(appName)
+        property string nextDisplayTarget: ""
+        property bool desktopWording: false
+        title: desktopWording ? qsTr("Stop remote application?") : ""
+        text: desktopWording
+              ? (segueToStream
+                 ? qsTr("To connect to %1, the host must first end %2. Any unsaved work in programs it closes may be lost.").arg(nextAppName).arg(appName)
+                 : qsTr("The host will end the remote application %1. Any unsaved work in programs it closes may be lost.").arg(appName))
+              : qsTr("Are you sure you want to quit %1? Any unsaved progress will be lost.").arg(appName)
         standardButtons: Dialog.Yes | Dialog.No
 
         function quitApp() {
@@ -857,7 +1206,7 @@ CenteredGridView {
                 // successfully quitting the old app.
                 params.nextAppName = nextAppName
                 params.nextBoxArtUrl = appModel.data(appModel.index(nextAppIndex, 0), boxArtRole)
-                params.nextSession = appModel.createSessionForApp(nextAppIndex, selectedDisplayTarget)
+                params.nextSession = appModel.createSessionForApp(nextAppIndex, nextDisplayTarget)
             }
             else {
                 params.nextAppName = null
@@ -922,6 +1271,7 @@ CenteredGridView {
     Connections {
         target: appModel
         function onDataChanged() {
+            refreshDesktopConnectionMode()
             // Coalesce repeated updates with Qt.callLater.
             Qt.callLater(function() {
                 let newSource = getBackgroundSource()
@@ -930,5 +1280,8 @@ CenteredGridView {
                 }
             })
         }
+        function onModelReset() { refreshDesktopConnectionMode() }
+        function onRowsInserted() { refreshDesktopConnectionMode() }
+        function onRowsRemoved() { refreshDesktopConnectionMode() }
     }
 }

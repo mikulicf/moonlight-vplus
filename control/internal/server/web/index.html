@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Moonlight V+ Control</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="masthead">
+      <div class="brand" aria-label="Moonlight V+ Control">
+        <span class="brand-mark" aria-hidden="true">M+</span>
+        <span>
+          <strong>Moonlight V+</strong>
+          <small>Control plane</small>
+        </span>
+      </div>
+      <div id="session-bar" class="session-bar" hidden>
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="session-user"></span>
+        <button id="logout-button" class="button button-quiet" type="button">Sign out</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="login-view" class="login-view" aria-labelledby="login-title">
+        <div class="login-copy">
+          <p class="eyebrow">Restricted administration</p>
+          <h1 id="login-title">Operate your streaming fleet.</h1>
+          <p>Sign in with an administrator account to manage access, machines, and host credentials.</p>
+          <ul class="feature-list">
+            <li>Grant access per user and machine</li>
+            <li>Rotate host secrets without exposing them again</li>
+            <li>Review security events from one place</li>
+          </ul>
+        </div>
+        <form id="login-form" class="panel auth-panel">
+          <div class="panel-heading">
+            <p class="eyebrow">Administrator</p>
+            <h2>Sign in</h2>
+          </div>
+          <label>
+            Username
+            <input id="login-username" name="username" autocomplete="username" required maxlength="64">
+          </label>
+          <label>
+            Password
+            <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+          </label>
+          <p id="login-error" class="form-error" role="alert" hidden></p>
+          <button class="button button-primary button-wide" type="submit">Sign in securely</button>
+          <p class="form-note">No account creation or default credentials are available here.</p>
+        </form>
+      </section>
+
+      <section id="admin-view" class="admin-view" hidden>
+        <div class="page-intro">
+          <div>
+            <p class="eyebrow">Administration</p>
+            <h1>Fleet overview</h1>
+            <p>Manage identities, hosts, and access from this browser session.</p>
+          </div>
+          <button id="refresh-button" class="button button-secondary" type="button">Refresh data</button>
+        </div>
+
+        <nav class="tabs" aria-label="Administration sections">
+          <button class="tab is-active" type="button" data-panel="users-panel">Users</button>
+          <button class="tab" type="button" data-panel="machines-panel">Machines</button>
+          <button class="tab" type="button" data-panel="grants-panel">Access grants</button>
+          <button class="tab" type="button" data-panel="audit-panel">Audit log</button>
+        </nav>
+
+        <section id="users-panel" class="workspace" aria-labelledby="users-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">Identities</p><h2 id="users-title">Users</h2></div>
+            <span id="user-count" class="count-badge"></span>
+          </div>
+          <div class="split-layout">
+            <form id="create-user-form" class="panel compact-form">
+              <h3>Create user</h3>
+              <label>Username<input id="new-username" autocomplete="off" required maxlength="64" pattern="[a-zA-Z0-9._@-]+"></label>
+              <label>Temporary password<input id="new-user-password" type="password" autocomplete="new-password" required></label>
+              <label class="check-label"><input id="new-user-admin" type="checkbox"> Administrator access</label>
+              <button class="button button-primary" type="submit">Create user</button>
+            </form>
+            <div id="users-list" class="record-list" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section id="machines-panel" class="workspace" aria-labelledby="machines-title" hidden>
+          <div class="section-heading">
+            <div><p class="eyebrow">Streaming hosts</p><h2 id="machines-title">Machines</h2></div>
+            <span id="machine-count" class="count-badge"></span>
+          </div>
+          <div class="split-layout">
+            <form id="create-machine-form" class="panel compact-form">
+              <h3>Add machine</h3>
+              <label>Name<input id="new-machine-name" required maxlength="128"></label>
+              <label>Address<input id="new-machine-address" required maxlength="255" placeholder="192.0.2.10"></label>
+              <div class="field-pair">
+                <label>HTTP port<input id="new-machine-http" type="number" min="1" max="65535" value="47989" required></label>
+                <label>HTTPS port<input id="new-machine-https" type="number" min="1" max="65535" value="47984" required></label>
+              </div>
+              <button class="button button-primary" type="submit">Add machine</button>
+            </form>
+            <div id="machines-list" class="record-list" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section id="grants-panel" class="workspace" aria-labelledby="grants-title" hidden>
+          <div class="section-heading">
+            <div><p class="eyebrow">Authorization</p><h2 id="grants-title">Access grants</h2></div>
+          </div>
+          <div class="panel table-panel">
+            <p class="section-note">Choose which machines each user may connect to. Changes apply immediately.</p>
+            <div id="grants-table" class="grant-grid" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section id="audit-panel" class="workspace" aria-labelledby="audit-title" hidden>
+          <div class="section-heading">
+            <div><p class="eyebrow">Security history</p><h2 id="audit-title">Audit log</h2></div>
+          </div>
+          <div class="panel table-panel table-scroll">
+            <table>
+              <thead><tr><th>Time</th><th>Actor</th><th>Event</th><th>Target</th></tr></thead>
+              <tbody id="audit-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <div id="password-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="password-modal-title" hidden>
+    <form id="password-form" class="panel modal-card">
+      <p class="eyebrow">Credential reset</p>
+      <h2 id="password-modal-title">Set a new password</h2>
+      <p id="password-user" class="modal-context"></p>
+      <label>New password<input id="reset-password" type="password" autocomplete="new-password" required autofocus></label>
+      <div class="button-row">
+        <button id="password-cancel" class="button button-quiet" type="button">Cancel</button>
+        <button class="button button-primary" type="submit">Update password</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="token-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="token-title" hidden>
+    <section class="panel modal-card">
+      <p class="eyebrow">One-time host secret</p>
+      <h2 id="token-title">Copy this token now</h2>
+      <p>This secret will not be shown again. Store it directly on the intended host.</p>
+      <code id="host-token" class="secret-value"></code>
+      <div class="button-row">
+        <button id="copy-token" class="button button-primary" type="button">Copy token</button>
+        <button id="dismiss-token" class="button button-secondary" type="button">I have stored it</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

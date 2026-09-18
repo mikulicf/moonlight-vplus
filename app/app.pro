@@ -234,6 +234,7 @@ SOURCES += \
     backend/identitymanager.cpp \
     backend/nvcomputer.cpp \
     backend/nvhttp.cpp \
+    backend/managedbackend.cpp \
     backend/nvpairingmanager.cpp \
     backend/computermanager.cpp \
     backend/boxartmanager.cpp \
@@ -309,6 +310,7 @@ HEADERS += \
     backend/identitymanager.h \
     backend/nvcomputer.h \
     backend/nvhttp.h \
+    backend/managedbackend.h \
     backend/usbforwardingcapability.h \
     backend/nvpairingmanager.h \
     backend/computermanager.h \

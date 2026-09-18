@@ -13,6 +13,7 @@
 #include <QThread>
 #include <QReadWriteLock>
 #include <QSettings>
+#include <QSet>
 #include <QRunnable>
 #include <QTimer>
 #include <QMutex>
@@ -214,6 +215,7 @@ class ComputerManager : public QObject
     friend class DeferredHostDeletionTask;
     friend class PendingAddTask;
     friend class PendingPairingTask;
+    friend class PendingManagedHostTask;
     friend class DelayedFlushThread;
 
 public:
@@ -228,6 +230,11 @@ public:
     Q_INVOKABLE void addNewHostManually(QString address);
 
     void addNewHost(NvAddress address, bool mdns, QString name = QString(), NvAddress mdnsIpv6Address = NvAddress());
+
+    void addManagedHost(QString backend, QString requestId, QString uuid, QString name,
+                        NvAddress address, uint16_t httpsPort, QSslCertificate certificate);
+
+    void cancelManagedRequest(QString backend, QString requestId);
 
     QString generatePinString();
 
@@ -245,6 +252,7 @@ public:
     void clientSideAttributeUpdated(NvComputer* computer);
 
 signals:
+    void managedHostReady(QString backend, QString requestId, QString uuid, QString error);
     void computerStateChanged(NvComputer* computer);
 
     void pairingCompleted(NvComputer* computer, QString error);
@@ -274,6 +282,7 @@ private:
     QReadWriteLock m_Lock;
     QMap<QString, NvComputer*> m_KnownHosts;
     QMap<QString, ComputerPollingEntry*> m_PollEntries;
+    QSet<QString> m_PendingManagedRequests;
     QHash<QString, NvComputer> m_LastSerializedHosts; // Protected by m_DelayedFlushMutex
     QSharedPointer<QMdnsEngine::Server> m_MdnsServer;
     QMdnsEngine::Browser* m_MdnsBrowser;
