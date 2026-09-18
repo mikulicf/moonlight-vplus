@@ -23,8 +23,7 @@ Column {
         SettingsRow {
             title: "Moonlight V+"
             description: qsTr("Maintained by mikulicf, based on Moonlight V+ by qiin2333 and AlkaidLab, and Moonlight Qt by the Moonlight contributors.")
-            Flow {
-                width: parent.width
+            Column {
                 spacing: Theme.spaceSm
                 HardLink {
                     text: qsTr("Source code")
@@ -43,8 +42,7 @@ Column {
         subtitle: qsTr("Released under GNU GPLv3. Copyright and license notices from upstream projects are retained.")
         SettingsRow {
             title: "GNU GPL v3.0"
-            Flow {
-                width: parent.width
+            Column {
                 spacing: Theme.spaceSm
                 HardLink {
                     text: qsTr("License")

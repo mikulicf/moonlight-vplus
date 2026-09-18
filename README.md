@@ -18,8 +18,10 @@ It remains compatible with upstream Moonlight and standard Sunshine hosts, while
 Download Windows, macOS, Linux AppImage, and Steam Link builds from [GitHub Releases](https://github.com/mikulicf/moonlight-vplus/releases).
 
 > **macOS currently ships Apple Silicon (arm64) builds only**, named like `Moonlight-VPlus-<version>-arm64.dmg`.
+> Intel Mac users need to build from source using the instructions below.
 >
 > **Linux AppImages are available for x86_64 and aarch64**, named like `Moonlight-VPlus-<version>-x86_64.AppImage` and `Moonlight-VPlus-<version>-aarch64.AppImage`.
+> The x86_64 package is built on Ubuntu 22.04 and requires glibc 2.35 or later. The aarch64 package is built on Ubuntu 24.04 and requires glibc 2.39 or later, so Debian 12 and Raspberry Pi OS Bookworm cannot run it; use Trixie or a newer compatible distribution.
 
 For upstream Moonlight distribution channels, mobile clients, Flatpak, Snap, or distro packages, see the [Moonlight website](https://moonlight-stream.org) and the [upstream repository](https://github.com/moonlight-stream/moonlight-qt). Those builds may not include the Foundation Sunshine extensions maintained in Moonlight V+ for PC.
 
@@ -112,6 +114,8 @@ Requirements:
 - Qt 6 SDK, preferably close to the Qt 6.11.x version used by CI.
 - Xcode 14 or later.
 - `create-dmg` when producing DMG artifacts.
+
+DMG packaging also builds the USB helper, which requires Xcode 16 or later, CMake 3.24 or later, and `pkg-config`; see [usb-helper/README.md](usb-helper/README.md).
 
 Common build commands:
 
