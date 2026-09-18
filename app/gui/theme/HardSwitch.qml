@@ -2,7 +2,7 @@ import QtQuick 2.9
 import QtQuick.Controls
 import "."
 
-// 方角开关：方轨 + 方滑块，滑块位移不带回弹。
+// Square switch with a rectangular track and thumb, moving without bounce.
 Switch {
     id: control
 
@@ -12,7 +12,7 @@ Switch {
     padding: 0
     spacing: 0
 
-    // 关掉 FluentWinUI3 那圈白色圆角双环，焦点改用下面的方角 FocusRing。
+    // Replace FluentWinUI3's rounded focus rings with the square FocusRing below.
     readonly property Item __focusFrameTarget: null
 
     function commitPointerToggle() {
@@ -43,8 +43,7 @@ Switch {
                     : (control.hovered ? Theme.accent : Theme.lineStrong)
         opacity: control.enabled ? 1.0 : 0.45
 
-        // 开启态是 accent 填充 + accent 描边，轨道边框腾不出来表达焦点，
-        // 所以焦点走外挂环（和 HardCheckBox 一致）。
+        // On-state accent fill and border already express state; use an external focus ring.
         FocusRing {
             visible: control.visualFocus
         }
@@ -73,10 +72,9 @@ Switch {
         // FluentWinUI3 Switch regression where a stationary release is ignored,
         // while retaining both tap-to-toggle and drag-to-select behavior.
         //
-        // 这条自管的指针路径必须同时切换状态并发出 toggled()：ToggleRow 靠它把值
-        // 写回偏好设置，而 checkedChanged 在初始化恢复绑定值时也会触发，不能代替。
-        // 不使用 AbstractButton.click()，因为它从 Qt 6.8 才有；Steam Link 和部分
-        // Linux 构建仍使用更早的 Qt。
+        // Pointer handling must change state and emit toggled() so ToggleRow saves it.
+        // checkedChanged also fires during restoration and cannot replace user-only toggled().
+        // Avoid AbstractButton.click(), which requires Qt 6.8 and breaks older toolchains.
         MouseArea {
             id: pointerArea
             anchors.fill: parent
@@ -112,8 +110,7 @@ Switch {
             }
             onReleased: function() {
                 if (dragging) {
-                    // 拖到哪一侧就是哪一侧：只有真的换了边才提交，
-                    // 拖回原位松手等于什么都没做。
+                    // Commit only if dragging changes sides; returning to the original side is a no-op.
                     var targetChecked = dragPosition >= 0.5
                     if (targetChecked !== control.checked) {
                         control.commitPointerToggle()

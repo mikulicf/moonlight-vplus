@@ -27,8 +27,8 @@
 
 namespace {
 
-// 主机推来的标准光标默认换成本机的系统光标。设 MOONLIGHT_NATIVE_CURSOR=0 可以不
-// 重编就退回旧行为，用来确认某个形状是不是被认错了。
+// Replace recognized host cursors with native system cursors by default.
+// MOONLIGHT_NATIVE_CURSOR=0 restores bitmap behavior for diagnosis without rebuilding.
 bool nativeCursorSubstitutionEnabled()
 {
     static const bool enabled =
@@ -43,14 +43,13 @@ bool toSdlSystemCursor(NativeCursorShape shape, SDL_SystemCursor& systemCursor)
         systemCursor = SDL_SYSTEM_CURSOR_ARROW;
         return true;
     case NativeCursorShape::AppStarting:
-        // SDL 的 Cocoa 后端把它映射到 HIServices 的 busybutclickable —— 正是 macOS
-        // 自己那只"箭头 + 转圈"。不会转（SDL 不支持动画光标），但风格是对的。
+        // Cocoa maps this to HIServices' busybutclickable arrow/ring. SDL does not
+        // animate it, but it retains native styling.
         systemCursor = SDL_SYSTEM_CURSOR_WAITARROW;
         return true;
     case NativeCursorShape::Wait:
-        // SDL 的 Cocoa 后端把 WAIT 和 WAITARROW 映射到同一只 busybutclickable，所以
-        // 主机只有一个圈时，本机显示的是"箭头 + 转圈"。macOS 没有纯转圈的公开光标
-        // （沙滩球由 WindowServer 画，设不了），这已经是最接近的原生表达。
+        // Cocoa maps WAIT and WAITARROW to busybutclickable. macOS exposes no public
+        // ring-only cursor (WindowServer owns the beachball), so this is the closest match.
         systemCursor = SDL_SYSTEM_CURSOR_WAIT;
         return true;
     case NativeCursorShape::IBeam:
@@ -468,12 +467,10 @@ void SdlInputHandler::applyCapturedCursorState()
 
 Uint32 SdlInputHandler::remoteCursorHideTimerCallback(Uint32 interval, void*)
 {
-    // 定时器跑在 SDL 的定时器线程上，macOS 要求光标接口只在主线程调，绕回主循环去做
+    // SDL timers run off-thread; route cursor calls back to the main thread for macOS.
     if (!Session::queueCursorVisibilityFlush()) {
-        // 事件队列满了。这里必须重试而不是就此收工：定时器一停，
-        // m_RemoteCursorHideTimer 就永远卡在一个已过期的 ID 上，
-        // updateRemoteCursorVisibility() 之后每次隐藏请求都会被那道
-        // "已经在等了" 的短路挡掉，直到主机下次说要显示才解开。
+        // Retry if the event queue is full. Otherwise an expired timer ID remains
+        // recorded and causes every later hide request to short-circuit until shown again.
         return interval;
     }
     return 0;
@@ -490,13 +487,13 @@ void SdlInputHandler::cancelPendingRemoteCursorHide()
 void SdlInputHandler::updateRemoteCursorVisibility(bool visible)
 {
     if (visible) {
-        // 显示立即生效，同时把还没到期的隐藏作废
+        // Show immediately and cancel any pending hide.
         cancelPendingRemoteCursorHide();
         m_RemoteCursorVisible = true;
         return;
     }
 
-    // 已经藏了，或者已经在等这次隐藏坐实
+    // Already hidden, or already waiting for this hide to settle.
     if (!m_RemoteCursorVisible || m_RemoteCursorHideTimer != 0) {
         return;
     }
@@ -505,7 +502,7 @@ void SdlInputHandler::updateRemoteCursorVisibility(bool visible)
                                            remoteCursorHideTimerCallback,
                                            this);
     if (m_RemoteCursorHideTimer == 0) {
-        // 定时器起不来就立即生效。宁可闪，也不能把主机要求藏起来的光标留在屏上。
+        // If timer creation fails, hide immediately rather than leaving an unwanted cursor visible.
         m_RemoteCursorVisible = false;
     }
 }
@@ -513,7 +510,7 @@ void SdlInputHandler::updateRemoteCursorVisibility(bool visible)
 void SdlInputHandler::flushPendingRemoteCursorHide()
 {
     if (m_RemoteCursorHideTimer == 0) {
-        // 事件还在队列里排着的时候主机又说要显示，这次隐藏已经作废了
+        // A newer show request invalidated this queued hide event.
         return;
     }
 
@@ -545,9 +542,8 @@ void SdlInputHandler::installRemoteCursor(SDL_Cursor* cursor)
     SDL_Cursor* old = m_RemoteCursor;
     m_RemoteCursor = cursor;
 
-    // 先把新光标装上，再放掉旧的。反过来的话释放的正是当前光标，SDL 会先跳回默认
-    // 光标，于是每次换形状都能看见一帧默认箭头 —— 主机在两个形状之间来回推时（鼠标
-    // 压在文本框边界上就会）这一帧就成了肉眼可见的闪烁。
+    // Install the new cursor before freeing the old one. Freeing the current cursor
+    // first briefly restores SDL's default arrow, causing flicker during rapid shape changes.
     if (old != nullptr && SDL_GetCursor() == old) {
         SDL_SetCursor(cursor);
     }
@@ -564,9 +560,8 @@ bool SdlInputHandler::tryUseNativeRemoteCursor(const RemoteCursorUpdate& update)
     const NativeCursorShape shape = classifyCursorShape(metrics);
 
     if (shape != m_LastCursorClass) {
-        // 认不出来的时候把度量全量打出来，好照着实测数字调阈值——否则只知道"没认
-        // 出来"，看不出被哪条判据挡掉了。走 verbose，默认日志级别下不出现；只在结果
-        // 变化时打，所以游戏里逐帧变的自绘光标也不会刷屏。
+        // Log all measurements for unrecognized shapes at verbose level, only when
+        // results change, so threshold failures are diagnosable without flooding logs.
         if (shape == NativeCursorShape::Unknown && metrics.valid) {
             SDL_LogVerbose(SDL_LOG_CATEGORY_APPLICATION,
                            "Unclassified remote cursor %ux%u: "
@@ -587,7 +582,7 @@ bool SdlInputHandler::tryUseNativeRemoteCursor(const RemoteCursorUpdate& update)
         m_LastCursorClass = shape;
     }
     else if (shape != NativeCursorShape::Unknown && m_RemoteCursor != nullptr) {
-        // 同一种系统光标已经装着了。主机会反复推同一个形状，这里挡掉重建。
+        // The same native cursor is already installed; avoid rebuilding repeated host shapes.
         return true;
     }
 
@@ -601,16 +596,16 @@ bool SdlInputHandler::tryUseNativeRemoteCursor(const RemoteCursorUpdate& update)
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "Failed to create system cursor %d: %s",
                     (int)systemCursor, SDL_GetError());
-        // 别让上面那条"同一形状就短路"的分支把这次失败当成已经装好了
+        // Do not let the same-shape shortcut treat a failed installation as successful.
         m_LastCursorClass = NativeCursorShape::Unknown;
         return false;
     }
 
-    // 热点由系统光标自带，主机推来的热点在这条路径上忽略
+    // Native system cursors provide their own hotspots; ignore the host hotspot here.
     installRemoteCursor(cursor);
 
-    // 系统光标的尺寸由系统自己管，不受窗口 backing 比例影响，所以不必留着形状
-    // 等换屏时重建 —— 顺带让 refreshRemoteCursorScale() 直接短路掉。
+    // Native cursor sizing is independent of backing scale. Clear cached shape state
+    // so display changes do not trigger unnecessary bitmap reconstruction.
     m_HasLastCursorShape = false;
     m_RemoteCursorScale = getRemoteCursorScale();
     return true;
@@ -645,9 +640,9 @@ void SdlInputHandler::synchronizeLocalCursorMode()
 qreal SdlInputHandler::getRemoteCursorScale() const
 {
 #ifdef Q_OS_MACOS
-    // SDL 的 Cocoa 后端把 surface 的像素宽高当成 NSImage 的逻辑 point 尺寸，所以
-    // Retina 屏上要先按 backing 比例把光标缩回去。比例从窗口的 point / pixel 尺寸算，
-    // 而不是问屏幕 —— 窗口横跨两块屏时它反映的是实际渲染用的那个 backing store。
+    // Cocoa interprets SDL surface dimensions as logical NSImage points. Compensate
+    // for Retina using the window's point/pixel ratio, which reflects the actual
+    // backing store even when the window straddles displays.
     if (m_Window == nullptr) {
         return 1.0;
     }
@@ -673,9 +668,8 @@ qreal SdlInputHandler::getRemoteCursorScale() const
 void SdlInputHandler::refreshRemoteCursorScale()
 {
 #ifdef Q_OS_MACOS
-    // 缩放比例是创建光标那一刻算的，而 updateRemoteCursor() 只在主机推来新形状时才会
-    // 被调用。窗口从 Retina 屏拖到 1x 屏（或反过来）时，光标会一直停在旧比例上 ——
-    // 大一倍或小一倍 —— 直到主机下一次换形状。这里用缓存的那份形状重建一次。
+    // Rebuild cached bitmap cursors after backing-scale changes. The host does not
+    // resend a shape merely because the client moved between Retina and 1x displays.
     if (!m_HasLastCursorShape) {
         return;
     }
@@ -731,8 +725,8 @@ void SdlInputHandler::updateRemoteCursor(const RemoteCursorUpdate& update)
                         update.height,
                         update.width * 4,
                         QImage::Format_ARGB32);
-                    // 先转预乘再缩。直接对直通 alpha 做 SmoothTransformation 的话，
-                    // Qt 会把全透明像素里的黑色一起插值进来，缩完边缘一圈发暗。
+                    // Premultiply before smooth scaling so transparent black pixels
+                    // do not darken antialiased edges during interpolation.
                     scaledCursor = source
                                        .convertToFormat(QImage::Format_ARGB32_Premultiplied)
                                        .scaled(cursorWidth,
@@ -770,8 +764,7 @@ void SdlInputHandler::updateRemoteCursor(const RemoteCursorUpdate& update)
                 else {
                     installRemoteCursor(cursor);
 
-                    // 记下这一份形状和它用的缩放比例。换显示器时靠它重建 ——
-                    // 主机不会因为我们换了屏就重推一次形状。
+                    // Cache the bitmap and scale for reconstruction when displays change.
                     m_LastCursorShape = update;
                     m_HasLastCursorShape = true;
                     m_RemoteCursorScale = getRemoteCursorScale();

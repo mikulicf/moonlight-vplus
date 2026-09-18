@@ -2,7 +2,7 @@ import QtQuick 2.9
 import QtQuick.Controls
 import "../theme"
 
-// 客户端生态中的平台选择项。选中态表示当前详情，焦点态只表示键盘/手柄位置。
+// Platform selection: selected state identifies current details; focus tracks keyboard/gamepad input.
 Button {
     id: control
 

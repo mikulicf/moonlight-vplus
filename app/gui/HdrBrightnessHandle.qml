@@ -39,12 +39,10 @@ Item {
         inset: 1
     }
 
-    // 三个把手全部方角，配色跟着刻度条的三段：暗青 / 青 / 酸性绿。
+    // Square handles follow the three range colors: dim teal, teal, and lime.
     //
-    // 焦点不画在把手自己的描边上：三个把手的填充分别是 accentDim / accent / acid，
-    // 描边已经被「这是哪一段」占住了（中间那个还正好是 accent，accent 描 accent
-    // 等于看不见）。所以统一挂全应用那个方角 FocusRing，跟 CheckBox / Switch /
-    // Slider 把手一个规矩。
+    // The handle border already identifies its range; accent-on-accent focus is invisible.
+    // Use the shared external square FocusRing, like checkboxes, switches, and sliders.
     Rectangle {
         anchors.centerIn: parent
         visible: handle.handleStyle === handle.minimumStyle
@@ -76,7 +74,7 @@ Item {
         border.width: 2
         border.color: Theme.ink
 
-        // 峰值把手带一圈酸性绿光晕，替代参考站的 box-shadow: 0 0 12px
+        // A translucent lime ring supplies the peak handle's glow.
         Rectangle {
             anchors.centerIn: parent
             width: parent.width + 8

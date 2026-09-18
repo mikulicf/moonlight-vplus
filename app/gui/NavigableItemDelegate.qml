@@ -4,9 +4,9 @@ import QtQuick.Controls
 ItemDelegate {
     property GridView grid
 
-    // 关掉 FluentWinUI3 那圈白色圆角双环 —— PcView / AppView 的格子项自己画
-    // 焦点表达（月球高亮、卡片描边），再套一圈圆角白环只会糊在一起。
-    // 详见 theme/FocusRing.qml 的注释。
+    // PcView/AppView draw their own focus treatment. Disable FluentWinUI3's rounded
+    // white rings so they do not overlap the moon highlight or card border.
+    // See theme/FocusRing.qml.
     readonly property Item __focusFrameTarget: null
 
     highlighted: grid.activeFocus && grid.currentItem === this

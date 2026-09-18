@@ -10,8 +10,7 @@ Menu {
 
     padding: Theme.spaceXs
 
-    // 方角 + 1px 描边 + 硬投影。菜单不用左侧粗条：它本身已经是一块小硬板，
-    // 再加粗条会和菜单项的 hover 抢注意力。
+    // Square border and hard shadow, without a left bar competing with item hover emphasis.
     background: Panel {
         implicitWidth: 200
         fill: Theme.surfaceLayer

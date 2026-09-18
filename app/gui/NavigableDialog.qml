@@ -3,8 +3,8 @@ import QtQuick.Controls
 
 import "theme"
 
-// 全应用的对话框外壳：方角 Panel + 硬投影 + 左侧强调粗条，标题走宽字距大写。
-// 内容和按钮由各个调用点自己填，这里只管壳。
+// Shared dialog shell: square Panel, hard shadow, left accent bar, and spaced uppercase title.
+// Callers supply content and buttons.
 Dialog {
     id: control
 
@@ -13,7 +13,7 @@ Dialog {
 
     topPadding: Theme.spaceXl
     bottomPadding: Theme.spaceXl
-    // 左边多让出粗条的宽度，否则内容会压在粗条上
+    // Reserve extra left padding for the accent bar.
     leftPadding: Theme.spaceXl + Theme.accentBar
     rightPadding: Theme.spaceXl
 
@@ -23,13 +23,13 @@ Dialog {
         accentBarWidth: Theme.accentBar
     }
 
-    // 遮罩用 ink 而不是默认的半透明黑，和各页的壁纸遮罩同一个底色
+    // Match wallpaper dimming with ink rather than default translucent black.
     Overlay.modal: Rectangle {
         color: Qt.rgba(Theme.ink.r, Theme.ink.g, Theme.ink.b, 0.66)
     }
 
     header: Item {
-        // 没设 title 的对话框（绝大多数消息框）不占高度
+        // Untitled dialogs, including most message boxes, reserve no header height.
         visible: control.title !== ""
         implicitHeight: visible ? titleText.implicitHeight + Theme.spaceXl + Theme.spaceMd : 0
 
@@ -68,9 +68,8 @@ Dialog {
         }
     }
 
-    // 按钮区。不覆盖的话 FluentWinUI3 会自己垫一块圆角底板（那块比 Panel 亮一档的
-    // 深蓝），按钮也还是圆角胶囊 —— 添加主机那个框看起来「很奇怪」就是这个原因。
-    // NavigableMessageDialog 有自己的 footer（它要 helpRequested），会覆盖这一份。
+    // Replace FluentWinUI3's rounded button-area background and pill buttons.
+    // NavigableMessageDialog overrides this footer to support helpRequested.
     footer: DialogButtonBox {
         visible: count > 0
         standardButtons: control.standardButtons
@@ -88,9 +87,8 @@ Dialog {
             Keys.onRightPressed: nextItemInFocusChain(true).forceActiveFocus(Qt.TabFocusReason)
             Keys.onLeftPressed: nextItemInFocusChain(false).forceActiveFocus(Qt.TabFocusReason)
 
-            // 向上退回内容区。焦点链的上一项不一定还在对话框里 —— 纯消息框的按钮行
-            // 上面没有可聚焦的东西，一路往回会绕到模态遮罩背后的页面上去，所以先确认
-            // 它确实在 contentItem 之内，不在就只吃掉按键。
+            // Move upward only to a focusable item inside contentItem. Otherwise consume
+            // the key, preventing message-box navigation from reaching behind the modal overlay.
             Keys.onUpPressed: {
                 var prev = nextItemInFocusChain(false)
                 for (var item = prev; item; item = item.parent) {

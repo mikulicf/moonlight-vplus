@@ -7,13 +7,10 @@ import "../theme"
 import SystemProperties 1.0
 import UsbForwardingBackend 1.0
 
-// USB 设备共享管理对话框。平台语义不同：
-//  - Windows：共享/停止共享触发一次 UAC（usbipd bind/unbind 写 HKLM 注册表，
-//    需要管理员；每个设备一次）。bind 持久化在 usbipd 自己的注册表里。
-//  - macOS：共享只是记在 Moonlight 偏好里，无提权；转发用的 serve 进程由
-//    串流会话按需拉起。被 macOS 系统驱动占用（HID/存储/摄像头）的设备
-//    显示「In use by macOS」，不可共享。
-// 串流中是否真正转发，两平台都由悬浮菜单逐台确认。
+// USB sharing dialog. Windows bind/unbind uses UAC per device to update usbipd's
+// persisted HKLM state. macOS stores preferences without elevation; Session starts
+// serve on demand. System-owned macOS devices are marked unavailable.
+// On both platforms, users select actual forwarding per device in the overlay menu.
 NavigableDialog {
     id: dialog
 
@@ -73,7 +70,7 @@ NavigableDialog {
         width: parent ? parent.width : 0
         spacing: Theme.spaceMd
 
-        // 接管语义警告
+        // Explain device ownership transfer.
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: warningLayout.implicitHeight + Theme.spaceMd * 2
@@ -110,7 +107,7 @@ NavigableDialog {
             }
         }
 
-        // 状态反馈行（bind/unbind 结果）
+        // Display bind/unbind results.
         Text {
             Layout.fillWidth: true
             visible: dialog.statusText !== ""
@@ -121,7 +118,7 @@ NavigableDialog {
             wrapMode: Text.Wrap
         }
 
-        // 错误 / 空态
+        // Error and empty states.
         Text {
             Layout.fillWidth: true
             visible: UsbForwardingBackend.error !== ""
@@ -143,7 +140,7 @@ NavigableDialog {
             font.pointSize: Theme.fontBody
         }
 
-        // 设备列表
+        // Device list.
         ScrollView {
             id: deviceScroll
             Layout.fillWidth: true

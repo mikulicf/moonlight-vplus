@@ -8,8 +8,7 @@ MenuItem {
     // Qt 5.10 has a menu property, but we need to support 5.9
     // so we must make our own.
     property Menu parentMenu
-    // hover 以前是「浅底 + 深字」反白，在深色硬边风格里太跳。改成 surface2 底 +
-    // 文字提亮，配左侧一条强调粗条指示当前项。
+    // Use surface2 and brighter text on hover, plus an accent bar for the current item.
     property color hoverColor: Theme.surface2
     property color textColor: Theme.textDim
     property color hoverTextColor: Theme.text
@@ -28,7 +27,7 @@ MenuItem {
     contentItem: Row {
         spacing: Theme.spaceSm
 
-        // 替代 leftPadding 的空白项，仅在复选框时显示
+        // Reserve checkbox space only for checkable items instead of fixed left padding.
         Item {
             visible: menuItem.checkable
             width: 16

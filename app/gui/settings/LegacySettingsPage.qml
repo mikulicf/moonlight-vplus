@@ -11,8 +11,8 @@ import ComputerManager 1.0
 import SystemProperties 1.0
 import ImageUtils 1.0
 
-// 这六个分类保留在同一文件中，以维持现有 LegacySettingsPage 翻译上下文。
-// 视觉和交互已经迁移到 SettingsCard / SettingsRow / ToggleRow。
+// Retain these six categories in one file to preserve their translation context.
+// Presentation and interaction use SettingsCard, SettingsRow, and ToggleRow.
 Column {
     id: settingsPage
 
@@ -20,7 +20,7 @@ Column {
     signal bitratePreferenceChanged()
 
     property string category: ""
-    // 关闭捕获时保留用户上次选择的作用范围，重新开启后恢复原模式。
+    // Preserve the last capture scope while disabled and restore it when re-enabled.
     property int captureSysKeysSelection: StreamingPreferences.CSK_FULLSCREEN
 
     function applyLocalBackgroundImage(fileUrl) {
@@ -37,7 +37,7 @@ Column {
     width: parent ? parent.width : 0
     spacing: Theme.spaceLg
 
-    // ================= 音频 =================
+    // ================= Audio =================
     SettingsCard {
         visible: settingsPage.category === "audio" && hasVisibleContent
         title: qsTr("Audio Settings")
@@ -77,7 +77,7 @@ Column {
         }
     }
 
-    // ================= 主机 =================
+    // ================= Host =================
     SettingsCard {
         visible: settingsPage.category === "host" && hasVisibleContent
         title: qsTr("Screen Combination Mode")
@@ -106,7 +106,7 @@ Column {
         }
     }
 
-    // ================= 软件 =================
+    // ================= Software =================
     SettingsCard {
         visible: settingsPage.category === "ui" && hasVisibleContent
         title: qsTr("Software Settings")
@@ -135,30 +135,30 @@ Column {
 
             model: ListModel {
                 ListElement { text: qsTr("Automatic"); val: StreamingPreferences.LANG_AUTO }
-                ListElement { text: "Deutsch"; val: StreamingPreferences.LANG_DE }
+                ListElement { text: "German"; val: StreamingPreferences.LANG_DE }
                 ListElement { text: "English"; val: StreamingPreferences.LANG_EN }
-                ListElement { text: "Français"; val: StreamingPreferences.LANG_FR }
-                ListElement { text: "简体中文"; val: StreamingPreferences.LANG_ZH_CN }
+                ListElement { text: "French"; val: StreamingPreferences.LANG_FR }
+                ListElement { text: "Chinese (Simplified)"; val: StreamingPreferences.LANG_ZH_CN }
                 ListElement { text: "Norwegian Bokmål"; val: StreamingPreferences.LANG_NB_NO }
-                ListElement { text: "русский"; val: StreamingPreferences.LANG_RU }
-                ListElement { text: "Español"; val: StreamingPreferences.LANG_ES }
-                ListElement { text: "日本語"; val: StreamingPreferences.LANG_JA }
-                ListElement { text: "Tiếng Việt"; val: StreamingPreferences.LANG_VI }
-                ListElement { text: "ภาษาไทย"; val: StreamingPreferences.LANG_TH }
-                ListElement { text: "한국어"; val: StreamingPreferences.LANG_KO }
-                ListElement { text: "Magyar"; val: StreamingPreferences.LANG_HU }
-                ListElement { text: "Nederlands"; val: StreamingPreferences.LANG_NL }
-                ListElement { text: "Svenska"; val: StreamingPreferences.LANG_SV }
-                ListElement { text: "Türkçe"; val: StreamingPreferences.LANG_TR }
-                ListElement { text: "繁體中文"; val: StreamingPreferences.LANG_ZH_TW }
-                ListElement { text: "Português"; val: StreamingPreferences.LANG_PT }
-                ListElement { text: "Português do Brasil"; val: StreamingPreferences.LANG_PT_BR }
-                ListElement { text: "Ελληνικά"; val: StreamingPreferences.LANG_EL }
-                ListElement { text: "Italiano"; val: StreamingPreferences.LANG_IT }
-                ListElement { text: "Język polski"; val: StreamingPreferences.LANG_PL }
-                ListElement { text: "Čeština"; val: StreamingPreferences.LANG_CS }
-                ListElement { text: "Български"; val: StreamingPreferences.LANG_BG }
-                ListElement { text: "தமிழ்"; val: StreamingPreferences.LANG_TA }
+                ListElement { text: "Russian"; val: StreamingPreferences.LANG_RU }
+                ListElement { text: "Spanish"; val: StreamingPreferences.LANG_ES }
+                ListElement { text: "Japanese"; val: StreamingPreferences.LANG_JA }
+                ListElement { text: "Vietnamese"; val: StreamingPreferences.LANG_VI }
+                ListElement { text: "Thai"; val: StreamingPreferences.LANG_TH }
+                ListElement { text: "Korean"; val: StreamingPreferences.LANG_KO }
+                ListElement { text: "Hungarian"; val: StreamingPreferences.LANG_HU }
+                ListElement { text: "Dutch"; val: StreamingPreferences.LANG_NL }
+                ListElement { text: "Swedish"; val: StreamingPreferences.LANG_SV }
+                ListElement { text: "Turkish"; val: StreamingPreferences.LANG_TR }
+                ListElement { text: "Chinese (Traditional)"; val: StreamingPreferences.LANG_ZH_TW }
+                ListElement { text: "Portuguese"; val: StreamingPreferences.LANG_PT }
+                ListElement { text: "Portuguese (Brazil)"; val: StreamingPreferences.LANG_PT_BR }
+                ListElement { text: "Greek"; val: StreamingPreferences.LANG_EL }
+                ListElement { text: "Italian"; val: StreamingPreferences.LANG_IT }
+                ListElement { text: "Polish"; val: StreamingPreferences.LANG_PL }
+                ListElement { text: "Czech"; val: StreamingPreferences.LANG_CS }
+                ListElement { text: "Bulgarian"; val: StreamingPreferences.LANG_BG }
+                ListElement { text: "Tamil"; val: StreamingPreferences.LANG_TA }
             }
         }
 
@@ -196,7 +196,7 @@ Column {
         ChoiceRow {
             id: backgroundSourceRow
             title: qsTr("Background source")
-            description: qsTr("Choose photography, Anime, a custom API, a local image, or no background.")
+            description: qsTr("Choose optional photography from Lorem Picsum, your own image URL, a local image, or no background.")
             maximumControlWidth: 260
             controlWidth: 260
             selectedValue: StreamingPreferences.backgroundSource
@@ -220,7 +220,6 @@ Column {
 
             model: ListModel {
                 ListElement { text: qsTr("Photography (Lorem Picsum)"); val: StreamingPreferences.BGS_PHOTOGRAPHY }
-                ListElement { text: qsTr("Anime (Pipw)"); val: StreamingPreferences.BGS_ANIME }
                 ListElement { text: qsTr("Custom API"); val: StreamingPreferences.BGS_API }
                 ListElement { text: qsTr("Local image"); val: StreamingPreferences.BGS_LOCAL }
                 ListElement { text: qsTr("No background"); val: StreamingPreferences.BGS_NONE }
@@ -371,7 +370,7 @@ Column {
         }
     }
 
-    // ================= 输入 =================
+    // ================= Input =================
     SettingsCard {
         visible: settingsPage.category === "input" && hasVisibleContent
         title: qsTr("Mouse")
@@ -490,7 +489,7 @@ Column {
         }
     }
 
-    // ================= 手柄 =================
+    // ================= Gamepad =================
     SettingsCard {
         visible: settingsPage.category === "gamepad" && hasVisibleContent
         title: qsTr("Gamepad Settings")
@@ -547,7 +546,7 @@ Column {
         }
     }
 
-    // ================= 高级 =================
+    // ================= Advanced =================
     SettingsCard {
         visible: settingsPage.category === "advanced" && hasVisibleContent
         title: qsTr("Video pipeline")

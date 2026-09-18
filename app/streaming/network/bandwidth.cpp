@@ -80,7 +80,7 @@ void BandwidthCalculator::start()
         m_lastBytesReceived = 0;
         m_currentBandwidthKbps = 0;
         m_elapsedTimer.start();
-        m_updateTimer.start(1000); // 每秒更新一次
+        m_updateTimer.start(1000); // Update once per second.
         m_running = true;
     }
 }
@@ -99,31 +99,31 @@ void BandwidthCalculator::updateBandwidth()
     qint64 currentBytes = 0;
     qint64 sentBytes = 0;
 
-    // 从系统获取实际网络使用情况
+    // Read actual network usage from the operating system.
     if (SystemNetworkStats::getNetworkUsage(currentBytes, sentBytes))
     {
         m_bytesReceived = currentBytes;
     }
     else
     {
-        // 如果获取失败，则使用手动计算的值
+        // Fall back to manually calculated usage if the system query fails.
         currentBytes = m_bytesReceived.load();
     }
 
     qint64 bytesTransferred = currentBytes - m_lastBytesReceived;
 
-    // 计算带宽（bits per second）
+    // Calculate bandwidth in bits per second.
     qint64 elapsedMs = m_elapsedTimer.restart();
     if (elapsedMs > 0)
     {
-        // 转换为Kbps (bits per second / 1000)
+        // Convert bits per second to Kbps.
         m_currentBandwidthKbps = static_cast<int>((bytesTransferred * 8.0 * 1000) / elapsedMs / 1000);
     }
 
     m_lastBytesReceived = currentBytes;
 }
 
-// 系统网络统计实现
+// Platform network statistics implementations.
 bool SystemNetworkStats::getNetworkUsage(qint64 &bytesReceived, qint64 &bytesSent)
 {
 #ifdef Q_OS_WIN
@@ -142,7 +142,7 @@ bool SystemNetworkStats::getNetworkUsage(qint64 &bytesReceived, qint64 &bytesSen
 #ifdef Q_OS_WIN
 bool SystemNetworkStats::getWindowsNetworkUsage(qint64 &bytesReceived, qint64 &bytesSent)
 {
-    // 初始化计数器
+    // Initialize counters.
     bytesReceived = 0;
     bytesSent = 0;
 
@@ -154,13 +154,12 @@ bool SystemNetworkStats::getWindowsNetworkUsage(qint64 &bytesReceived, qint64 &b
         return false;
     }
 
-    // 累加有效网络接口的流量
+    // Sum traffic across eligible network interfaces.
     for (ULONG i = 0; i < pIfTable->NumEntries; i++)
     {
         MIB_IF_ROW2 row = pIfTable->Table[i];
 
-        // 确保只计算有效的物理网络接口
-        // 排除虚拟适配器、隧道接口等
+        // Include active physical interfaces; exclude virtual adapters and tunnels.
         if (row.OperStatus == IfOperStatusUp &&
             row.MediaType != NdisMediumLoopback &&
             row.Type != IF_TYPE_SOFTWARE_LOOPBACK &&
@@ -169,7 +168,7 @@ bool SystemNetworkStats::getWindowsNetworkUsage(qint64 &bytesReceived, qint64 &b
             row.TransmitLinkSpeed > 0 && 
             row.ReceiveLinkSpeed > 0)
         {
-            // 检查是否是实际在用的接口 - 有流量的接口
+            // Check that the interface is actually carrying traffic.
             if (row.InOctets > 0 || row.OutOctets > 0) {
                 bytesReceived += row.InOctets;
                 bytesSent += row.OutOctets;
@@ -177,7 +176,7 @@ bool SystemNetworkStats::getWindowsNetworkUsage(qint64 &bytesReceived, qint64 &b
         }
     }
 
-    // 释放表资源
+    // Release the interface table.
     FreeMibTable(pIfTable);
 
     return true;
@@ -185,7 +184,7 @@ bool SystemNetworkStats::getWindowsNetworkUsage(qint64 &bytesReceived, qint64 &b
 #elif defined(Q_OS_LINUX)
 bool SystemNetworkStats::getLinuxNetworkUsage(qint64 &bytesReceived, qint64 &bytesSent)
 {
-    // Linux 实现：读取 /proc/net/dev 文件
+    // Linux: read /proc/net/dev.
     QFile file("/proc/net/dev");
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         return false;
@@ -194,7 +193,7 @@ bool SystemNetworkStats::getLinuxNetworkUsage(qint64 &bytesReceived, qint64 &byt
     bytesSent = 0;
 
     QTextStream in(&file);
-    QString line = in.readLine(); // 跳过前两行标题
+    QString line = in.readLine(); // Skip the two header lines.
     line = in.readLine();
 
     while (!in.atEnd())
@@ -203,10 +202,9 @@ bool SystemNetworkStats::getLinuxNetworkUsage(qint64 &bytesReceived, qint64 &byt
         QStringList parts = line.trimmed().split(QRegularExpression("\\s+"));
         if (parts.size() >= 10)
         {
-            // 每个网络接口行格式：Interface: rx_bytes ... tx_bytes ...
+            // Interface row format: Interface: rx_bytes ... tx_bytes ...
             QString interface = parts[0].remove(":");
-            if (interface != "lo")
-            { // 忽略本地回环接口
+            if (interface != "lo") { // Ignore loopback.
                 bytesReceived += parts[1].toLongLong();
                 bytesSent += parts[9].toLongLong();
             }
@@ -228,17 +226,17 @@ bool SystemNetworkStats::getMacOSNetworkUsage(qint64 &bytesReceived, qint64 &byt
     }
 
     for (struct ifaddrs *ifa = ifaddrs; ifa != nullptr; ifa = ifa->ifa_next) {
-        // 忽略非网络接口
+        // Ignore non-network interfaces.
         if (ifa->ifa_addr == nullptr || ifa->ifa_addr->sa_family != AF_LINK) {
             continue;
         }
 
-        // 忽略回环接口
+        // Ignore loopback interfaces.
         if (strncmp(ifa->ifa_name, "lo", 2) == 0) {
             continue;
         }
 
-        // 获取接口数据
+        // Read interface statistics.
         if (ifa->ifa_data != nullptr) {
             struct if_data *stats = (struct if_data *)ifa->ifa_data;
             bytesReceived += stats->ifi_ibytes;

@@ -102,8 +102,7 @@ static QString getStartupApplicationDir(const char* argv0)
 #endif
 
 #ifdef Q_OS_WIN32
-// 只有 Windows 分支的 app.setFont() 会用到它。不加这层 #ifdef 的话，其他平台每次
-// 构建都会报一条 -Wunused-function。
+// Used only by Windows app.setFont(); avoid unused-function warnings on other platforms.
 static bool shouldUseChineseWindowsUiFont(StreamingPreferences::Language language)
 {
     switch (language) {
@@ -1406,8 +1405,8 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    // 界面字体：Manrope（正文/标题）+ DM Mono（数字、状态徽标、宽字距微标签），
-    // 这是 neo-brutalism 视觉的一半，见 app/res/fonts/README.md。
+    // Register Manrope for headings/body and DM Mono for data, badges, and micro-labels.
+    // See app/res/fonts/README.md.
     //
     {
         static const char* const kBundledFonts[] = {
@@ -1452,10 +1451,10 @@ int main(int argc, char *argv[])
 #endif
 
         if (haveManrope) {
-            // Manrope 和 DM Mono 都没有中文字形，中文交给系统字体回退。
-            // Qt 会跳过列表里不存在的 family，所以这里可以无条件把候选都列上。
+            // Bundled fonts lack CJK glyphs. Let Qt skip unavailable families and
+            // fall back to suitable system fonts.
             QStringList families = UiFont::familyChain(QStringLiteral("Manrope"));
-            // 最后兜住原本的系统默认字体，别把上面平台分支设好的字号/字形提示丢了
+            // Retain the original system font as the final fallback and preserve size/hinting.
             families << uiFont.family();
             uiFont.setFamilies(families);
             uiFont.setStyleHint(QFont::SansSerif);
@@ -1543,12 +1542,10 @@ int main(int argc, char *argv[])
             return -1;
 
 #ifdef Q_OS_DARWIN
-        // 主界面去掉了系统标题栏的底色，那条 56px 的工具栏就是标题栏。但系统的标题栏
-        // 带子仍然只有 28~32pt 高：红绿灯挤在最上面一小条里，而 AppKit 也只在那条带子
-        // 里提供窗口拖动和双击缩放，工具栏下半部分是拖不动的。把带子拉高到 56，
-        // 红绿灯落到 bar 的中线上，拖动区也就覆盖了整条 bar。
+        // Extend the native 28-32-point titlebar to our 56-pixel toolbar. Center the
+        // window controls and let AppKit handle drag/double-click across its full height.
         //
-        // 56 要和 main.qml 里 toolBar 的 height 保持一致。
+        // Keep 56 synchronized with main.qml's toolbar height.
         if (auto* rootWindow = qobject_cast<QWindow*>(engine.rootObjects().first())) {
             MacWindowChrome::useTallTitleBar(rootWindow, 56);
         }

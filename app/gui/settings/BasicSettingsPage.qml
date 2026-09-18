@@ -8,8 +8,7 @@ import ".."
 import StreamingPreferences 1.0
 import SystemProperties 1.0
 
-// 「基本设置」——第一个迁移到新架构的分类。
-// 逻辑与旧 SettingsView 的 basicSettingsGroupBox 完全一致，只是换成卡片 + 设置行。
+// Basic settings preserve the former basicSettingsGroupBox behavior using cards and rows.
 Column {
     id: basicPage
 
@@ -22,7 +21,7 @@ Column {
         bitrateSlider.value = Math.log(StreamingPreferences.bitrateKbps)
     }
 
-    // ================= 画面 =================
+    // ================= Video =================
     SettingsCard {
         title: qsTr("Video")
         subtitle: qsTr("Setting values too high for your PC or network connection may cause lag, stuttering, or errors.")
@@ -586,17 +585,17 @@ Column {
                     return mbps < 100 ? mbps.toFixed(1) + " Mbps" : Math.round(mbps) + " Mbps"
                 }
                 color: Theme.accent
-                // 数字走等宽 + tabular-nums，拖滑条时数字不会左右抖
+                // Monospaced tabular numbers avoid horizontal movement while dragging.
                 font.family: Theme.fontMono
                 font.pointSize: Theme.fontCardTitle
                 font.weight: Font.Medium
             }
         }
 
-        // 码率滑条单独占一整行，塞进 SettingsRow 右侧会太窄
+        // Give the bitrate slider a full row; the SettingsRow control column is too narrow.
         Item {
             width: parent.width
-            // 同样不能用 visible，见 SettingsCard.hasVisibleContent 的注释
+            // Do not use visible here; see SettingsCard.hasVisibleContent.
             visible: bitrateRow.applicable
             height: visible ? bitrateControls.implicitHeight : 0
 
@@ -614,8 +613,7 @@ Column {
                     id: bitrateSlider
                     width: parent.width
 
-                    // 使用对数刻度来实现非线性调整
-                    // 上限对齐 Sunshine /bitrate 接口的 800000 Kbps 拒绝线
+                    // Use a logarithmic scale and match Sunshine /bitrate's 800000 Kbps limit.
                     property real logMin: Math.log(500)
                     property real logMax: Math.log(800000)
 
@@ -634,7 +632,7 @@ Column {
                     }
                 }
 
-                // 「恢复默认」是个次要动作，做成滑条右下角的小方按钮
+                // Keep reset as a secondary square action below the slider on the right.
                 Item {
                     width: parent.width
                     visible: resetBitrateButton.shown
@@ -642,8 +640,8 @@ Column {
 
                     Button {
                         id: resetBitrateButton
-                        // 关掉 FluentWinUI3 那圈白色圆角双环，焦点由下面的 2px accent 边框表达。
-                        // 详见 theme/FocusRing.qml 的注释。
+                        // Replace FluentWinUI3's rounded focus rings with a two-pixel accent border.
+                        // See theme/FocusRing.qml.
                         readonly property Item __focusFrameTarget: null
 
 
@@ -673,7 +671,7 @@ Column {
                             radius: 0
                             color: resetBitrateButton.down ? Theme.accentSoft
                                                            : (resetBitrateButton.hovered ? Theme.surface2 : "transparent")
-                            // 和 HardButton 一个规矩：hover / 按下 1px accent，focus 2px accent
+                            // Match HardButton: one-pixel accent on hover/press, two pixels on focus.
                             border.width: resetBitrateButton.visualFocus ? 2 : 1
                             border.color: resetBitrateButton.down || resetBitrateButton.hovered
                                           || resetBitrateButton.visualFocus
@@ -702,7 +700,7 @@ Column {
         }
     }
 
-    // ================= 画质增强 =================
+    // ================= Quality enhancements =================
     SettingsCard {
         title: qsTr("Enhancements")
 
@@ -771,7 +769,7 @@ Column {
         }
     }
 
-    // ================= 远程覆盖 =================
+    // ================= Remote overrides =================
     SettingsCard {
         title: qsTr("Remote overrides")
         subtitle: qsTr("Used instead of the values above when streaming over the internet.")

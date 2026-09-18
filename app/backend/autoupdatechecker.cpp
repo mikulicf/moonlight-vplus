@@ -13,8 +13,8 @@
 #include <QTextStream>
 
 // GitHub repository for update checks
-#define GITHUB_OWNER "qiin2333"
-#define GITHUB_REPO  "moonlight-qt"
+#define GITHUB_OWNER "mikulicf"
+#define GITHUB_REPO "moonlight-vplus"
 
 AutoUpdateChecker::AutoUpdateChecker(QObject *parent) :
     QObject(parent)
@@ -127,13 +127,11 @@ void AutoUpdateChecker::parseStringToVersionQuad(const QString& string, QVector<
 QString AutoUpdateChecker::getPreferredAssetSuffix() const
 {
 #if defined(Q_OS_DARWIN)
-    // CI 出的 DMG 现在带架构后缀（Moonlight-<版本>-arm64.dmg）。
-    // QSysInfo::buildCpuArchitecture() 给的是 arm64 / x86_64，和 generate-dmg.sh
-    // 里的 MOONLIGHT_ARCH 用词一致。
+    // CI DMGs have an architecture suffix, such as Moonlight-<version>-arm64.dmg.
+    // QSysInfo::buildCpuArchitecture() matches generate-dmg.sh's arm64/x86_64 names.
     //
-    // 只是「优先」而不是「必须」：这个后缀是从某个版本才开始有的，旧 release 里是
-    // Moonlight-<版本>.dmg。匹配不到就退回任意 .dmg，否则老版本的用户会看到
-    // 「找不到更新包」。
+    // Prefer, but do not require, the suffix: older releases used Moonlight-<version>.dmg.
+    // Accept a legacy unqualified DMG when no architecture-specific asset is available.
     return QStringLiteral("-") + QSysInfo::buildCpuArchitecture() + QStringLiteral(".dmg");
 #elif defined(APP_IMAGE)
     QString architecture = QSysInfo::buildCpuArchitecture().toLower();
@@ -306,7 +304,8 @@ void AutoUpdateChecker::handleUpdateCheckRequestFinished(QNetworkReply* reply)
             if (!expectedSuffix.isEmpty() && releaseObj.contains("assets") && releaseObj["assets"].isArray()) {
                 QJsonArray assets = releaseObj["assets"].toArray();
 
-                // 后备候选：后缀对得上但不带本机架构后缀的那个（旧 release 的命名）
+                // Fallback: an asset with the expected extension and legacy architecture-neutral
+                // name.
                 QString fallbackUrl;
                 QString fallbackName;
                 QString fallbackDigest;
@@ -340,10 +339,9 @@ void AutoUpdateChecker::handleUpdateCheckRequestFinished(QNetworkReply* reply)
                             break;
                         }
 
-                        // 后备只认「没带架构后缀」的旧命名。带了别的架构后缀的资产
-                        // 绝对不能当后备 —— 只发了 arm64 包的 release 会把 arm64 的
-                        // DMG 喂给 Intel 客户端。这种情况下宁可让 downloadUrl 留空，
-                        // 退回打开 release 页面让用户自己看。
+                        // Only architecture-neutral legacy assets qualify as fallbacks. Never offer
+                        // another architecture's DMG to this client. Leave downloadUrl empty
+                        // and open the release page if no compatible download exists.
                         bool isOtherArchAsset =
                                 assetName.endsWith(QStringLiteral("-arm64.dmg"), Qt::CaseInsensitive) ||
                                 assetName.endsWith(QStringLiteral("-x86_64.dmg"), Qt::CaseInsensitive) ||

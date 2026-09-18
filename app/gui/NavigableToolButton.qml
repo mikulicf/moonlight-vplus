@@ -9,29 +9,26 @@ ToolButton {
 
     property string iconSource
 
-    // 工具栏图标现在是 Fluent 24px Regular 的线性字形（和设置页分类栏同一套），
-    // 不再是以前那批 Material 48px filled。线性笔画在 40px 下会显得又细又飘，
-    // 所以按它的设计尺寸走 24 —— 顶部 bar 只有 56 高，40px 的图标本来也太满了。
+    // Fluent 24 Regular toolbar icons match the category rail. Render at their intended
+    // 24-pixel size; scaling line icons to 40 pixels looks thin and crowds the 56-pixel bar.
     property int iconSize: 24
 
     activeFocusOnTab: true
 
-    // 关掉 FluentWinUI3 那圈白色圆角双环，焦点由下面的 2px accent 边框表达。
-    // 详见 theme/FocusRing.qml 的注释。
+    // Replace FluentWinUI3's rounded white focus rings with the two-pixel accent border.
+    // See theme/FocusRing.qml.
     readonly property Item __focusFrameTarget: null
 
     icon.source: iconSource
     icon.width: iconSize
     icon.height: iconSize
 
-    // 统一染色：图标自己的 fill 是白的，这里压到 textDim，hover / 焦点时才提亮到
-    // text。这样一排图标的视觉重量是一致的，不会因为各自笔画粗细不同而深浅不齐。
+    // Tint icons consistently with textDim, brightening to text on hover or focus.
     icon.color: (control.hovered || control.visualFocus || control.down)
                 ? Theme.text : Theme.textDim
 
-    // 方角化。FluentWinUI3 的 ToolButton 背景是圆角高亮块，换成方角 + 描边；
-    // 按下时反过来用 accentSoft 填充，不做缩放也不做模糊。
-    // 静止无描边，hover 1px accent，focus 2px accent —— 和其他控件一个规矩。
+    // Square background and border; pressed state uses accentSoft without scaling or blur.
+    // No idle border, one-pixel accent on hover, and two-pixel accent on focus.
     background: Rectangle {
         radius: 0
         color: control.down ? Theme.accentSoft

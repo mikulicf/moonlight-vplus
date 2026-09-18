@@ -67,9 +67,9 @@ pushd $BUILD_FOLDER
 make -j$(sysctl -n hw.logicalcpu) $(echo "$BUILD_CONFIG" | tr '[:upper:]' '[:lower:]') || fail "Make failed!"
 popd
 
-# USB 转发 helper（usbipdcpp + libusb 静态构建，见 usb-helper/README.md）。
-# 独立 build 目录按架构隔离（本脚本可能对不同架构各跑一次，BUILD_ROOT 是共
-# 享的），configure 前清掉防陈旧缓存；主工程的 LTO 环境变量不带给它。
+# Build the USB helper with static usbipdcpp/libusb; see usb-helper/README.md.
+# Isolate staging by architecture, clear stale configure state, and do not
+# propagate the main application's LTO environment.
 echo Building USB forwarding helper
 USB_HELPER_BUILD=$BUILD_ROOT/usb-helper-$MOONLIGHT_ARCH
 rm -rf "$USB_HELPER_BUILD"
@@ -163,8 +163,7 @@ if [ "$NOTARY_KEYCHAIN_PROFILE" != "" ]; then
   xcrun stapler staple -v "$GENERATED_DMG" || fail "Notary ticket stapling failed!"
 fi
 
-# 名字里带上架构。这里只出一个架构的包（见上面 MOONLIGHT_ARCH 的注释），叫
-# Moonlight-<版本>.dmg 的话下载的人无法从名字判断能不能装 —— Intel Mac 上装了
-# 才发现打不开。app 侧的更新器也靠这个后缀挑对应架构的资产。
+# Include architecture in the single-architecture DMG name so users and the
+# application's updater can distinguish compatible downloads.
 mv "$GENERATED_DMG" "$INSTALLER_FOLDER/Moonlight-VPlus-$VERSION-$MOONLIGHT_ARCH.dmg"
 echo Build successful

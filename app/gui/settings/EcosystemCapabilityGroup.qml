@@ -3,7 +3,7 @@ import QtQuick 2.9
 import "."
 import "../theme"
 
-// “关于”页中的只读能力分组。只负责排版，不探测硬件，也不代表当前设备一定可用。
+// Read-only capability presentation; it neither probes hardware nor guarantees local support.
 Column {
     id: group
 

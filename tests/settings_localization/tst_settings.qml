@@ -25,10 +25,10 @@ TestCase {
     }
 
     function test_compiledChinese() {
-        compare(qsTranslate("SettingsView", "Settings"), "设置")
-        compare(qsTranslate("SettingsView", "Software Settings"), "软件设置")
-        compare(qsTranslate("LegacySettingsPage", "Language"), "语言")
-        compare(qsTranslate("AboutSettingsPage", "About"), "关于")
+        compare(qsTranslate("SettingsView", "Settings"), "\u8bbe\u7f6e")
+        compare(qsTranslate("SettingsView", "Software Settings"), "\u8f6f\u4ef6\u8bbe\u7f6e")
+        compare(qsTranslate("LegacySettingsPage", "Language"), "\u8bed\u8a00")
+        compare(qsTranslate("AboutSettingsPage", "About"), "\u5173\u4e8e")
         verify(qsTranslate("OverlayMenuPanel", "Connected — select to release") !== "Connected — select to release")
         verify(qsTranslate("StylusReplayTest", "Stylus replay stopped.") !== "Stylus replay stopped.")
     }

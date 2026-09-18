@@ -1,4 +1,4 @@
-# 统一编辑器行为,防空白/换行漂移。配合 .clang-format(C++ 深度格式化走那边)。
+# Keep editor whitespace and line endings consistent; .clang-format handles C++ formatting.
 root = true
 
 [*]
@@ -7,11 +7,11 @@ end_of_line = lf
 insert_final_newline = true
 trim_trailing_whitespace = true
 
-# Windows 批处理/PowerShell 脚本必须 CRLF,否则 cmd 会偶发解析错误
+# Windows batch and PowerShell scripts use CRLF to avoid cmd parsing problems.
 [*.{bat,cmd,ps1}]
 end_of_line = crlf
 
-# Markdown 行尾双空格是硬换行语义,不清理
+# Preserve Markdown's two trailing spaces, which represent a hard line break.
 [*.md]
 trim_trailing_whitespace = false
 

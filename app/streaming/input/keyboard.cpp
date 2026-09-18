@@ -78,7 +78,7 @@ void SdlInputHandler::performSpecialKeyCombo(KeyCombo combo)
                     "Detected show mouse combo");
 
         if (!SDL_GetRelativeMouseMode()) {
-            // 切换本地鼠标光标可见性状态
+            // Toggle local cursor visibility.
             m_MouseCursorCapturedVisibilityState = !m_MouseCursorCapturedVisibilityState;
             synchronizeLocalCursorMode();
             applyCapturedCursorState();

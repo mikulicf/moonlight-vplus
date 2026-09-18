@@ -234,13 +234,13 @@ NvHTTP::startApp(QString verb,
     QString appHeight = QString::number(streamConfig->height);
     QString appFps = QString::number((streamConfig->fps > 60 && isGfe) ? 0 : streamConfig->fps);
 
-    // 流分辨率缩放覆盖
+    // Stream resolution scaling override.
     if (remoteStreamConfig.originalStreamWidth > 0 && remoteStreamConfig.originalStreamHeight > 0) {
         appWidth = QString::number(remoteStreamConfig.originalStreamWidth);
         appHeight = QString::number(remoteStreamConfig.originalStreamHeight);
     }
 
-    // 远程分辨率覆盖
+    // Remote resolution override.
     if (remoteStreamConfig.remoteResolution) {
         if (remoteStreamConfig.remoteResolutionWidth > 0) {
             appWidth = QString::number(remoteStreamConfig.remoteResolutionWidth);
@@ -249,7 +249,7 @@ NvHTTP::startApp(QString verb,
             appHeight = QString::number(remoteStreamConfig.remoteResolutionHeight);
         }
     }
-    // 远程帧率覆盖
+    // Remote frame-rate override.
     if (remoteStreamConfig.remoteFps) {
         if (remoteStreamConfig.remoteFpsRate > 0) {
             appFps = QString::number(remoteStreamConfig.remoteFpsRate);

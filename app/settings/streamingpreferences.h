@@ -76,7 +76,7 @@ public:
     enum BackgroundSource
     {
         BGS_PHOTOGRAPHY,
-        BGS_ANIME,
+        BGS_ANIME, // Retired value; keep subsequent persisted IDs stable.
         BGS_API,
         BGS_LOCAL,
         BGS_NONE,
@@ -421,4 +421,3 @@ private:
 
     QQmlEngine* m_QmlEngine;
 };
-

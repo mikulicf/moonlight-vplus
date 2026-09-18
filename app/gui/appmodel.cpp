@@ -293,8 +293,8 @@ QVariantList AppModel::buildConnectionAddressList(NvComputer* computer)
     autoItem["port"] = 0;
     autoItem["display"] = tr("Auto (default)");
     autoItem["type"] = tr("Automatic selection with fallback");
-    // 没固定地址就是自动模式。这一位是弹窗预选的依据 —— 光看 activeAddress
-    // 分不出「自动选中的」和「用户固定的」。
+    // No pinned address means Automatic. activeAddress alone cannot distinguish
+    // automatic selection from an explicit user choice.
     autoItem["isActive"] = pinnedAddress.isNull();
     autoItem["isAuto"] = true;
     addresses.append(autoItem);
@@ -305,8 +305,8 @@ QVariantList AppModel::buildConnectionAddressList(NvComputer* computer)
         item["port"] = static_cast<int>(address.port());
         item["display"] = address.toString();
         item["type"] = getAddressType(address, localAddress, remoteAddress, manualAddress, ipv6Address);
-        // 具体条目只在「被固定」时算选中；自动模式下选中的是上面的「自动」项，
-        // 实际生效的地址交给轮询，不在这里标。
+        // Select concrete entries only when pinned; Automatic owns selection otherwise.
+        // Polling determines the effective address without marking it here.
         item["isActive"] = !pinnedAddress.isNull() && address == pinnedAddress;
         item["isAuto"] = false;
         item["isTested"] = computer->hasAddressTestSucceeded(address);

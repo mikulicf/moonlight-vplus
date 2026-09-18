@@ -8,16 +8,15 @@ import SystemProperties 1.0
 import UsbForwardingEnvironment 1.0
 import UsbForwardingBackend 1.0
 
-// 「外设」——本机物理外设与串流主机之间的设备级能力。
-// 与「输入设备」「手柄」分类的区别：那两页配置的是输入如何映射到串流，
-// 这一页管理的是把真实 USB 设备交给主机直接使用（USB 设备转发）。
+// Peripherals manage physical USB devices forwarded to the host. Input and Gamepad
+// categories instead configure how local input is mapped into a stream.
 Column {
     id: peripheralsPage
 
     width: parent ? parent.width : 0
     spacing: Theme.spaceLg
 
-    // Windows 走外挂 usbipd-win；macOS 走捆绑的 moonlight-usbd（usbipdcpp）。
+    // Windows uses usbipd-win; macOS uses the bundled moonlight-usbd/usbipdcpp helper.
     readonly property bool isMac: SystemProperties.isDarwin
 
     SettingsCard {
@@ -109,7 +108,7 @@ Column {
             }
         }
 
-        // macOS 平台说明：被系统驱动占用的设备（HID/存储/摄像头）无法共享。
+        // On macOS, devices held by system drivers (HID/storage/cameras) cannot be shared.
         SettingsRow {
             visible: peripheralsPage.isMac
             title: qsTr("Device availability")

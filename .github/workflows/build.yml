@@ -27,14 +27,12 @@ env:
 
 jobs:
   qml-lint:
-    # QML 的类型解析失败是运行期致命的，但 qmlcachegen 编得过、四平台构建全绿，
-    # 所以必须单独拦一道（见 scripts/qmllint-check.sh 里的说明）。
-    # 只装 Qt、不构建，和四个 build 并行跑。
+    # QML type-resolution errors can fail at runtime even when qmlcachegen and all builds pass.
+    # Run a separate lint check with Qt installed, in parallel with platform builds.
     runs-on: ubuntu-latest
 
-    # 这个 job 会执行 PR 版本里的 scripts/qmllint-check.sh。顶层 permissions 给的是
-    # contents: write，这里收回到只读，并且不把 checkout 的 token 写进本地 git 配置 ——
-    # 否则 PR 作者改一行脚本就能拿着仓库的写权限跑任意命令。
+    # This job executes scripts from the PR. Restrict its token to read-only and do not
+    # persist checkout credentials, so edited scripts cannot gain repository write access.
     permissions:
       contents: read
 
@@ -67,12 +65,13 @@ jobs:
         persist-credentials: false
 
     - name: Test version derivation
-      run: python3 -m unittest discover -s tests/derive_version -p 'test_*.py'
+      run: |
+        python3 -m unittest discover -s tests/derive_version -p 'test_*.py'
+        python3 -m unittest discover -s tests/upstream_status -p 'test_*.py'
 
   cpp-format:
-    # C++ 格式门禁:用 git clang-format 只检查相对目标分支**改动过的行**,
-    # 不做全量重排 —— 全量重排会让每次 merge 上游都变成格式冲突灾难。
-    # 与 qml-lint 同理收权到只读,防止 PR 作者借脚本提权。
+    # Check only C++ lines changed from the target branch. Whole-tree formatting would
+    # create unnecessary conflicts when merging upstream. Keep permissions read-only.
     runs-on: ubuntu-latest
 
     permissions:
@@ -87,10 +86,9 @@ jobs:
 
     - name: Install pinned clang-format
       run: |
-        # 版本必须钉死:不同 clang-format 版本对同一份 .clang-format 的输出有差异。
-        # 本地请装同一版本(pip install clang-format==21.1.8)再跑 git clang-format。
-        # PyPI 包自带配套的 git-clang-format 驱动,无需另行下载;runner 预装的
-        # /usr/bin/clang-format 版本未知,靠 ~/.local/bin 在 PATH 里靠前来压过它。
+        # Pin the formatter version; different versions can produce different output.
+        # Install the same version locally before running git clang-format. The PyPI
+        # package includes the driver; ~/.local/bin takes precedence over the runner's copy.
         pipx install clang-format==21.1.8
         command -v clang-format git-clang-format
         clang-format --version
@@ -101,11 +99,10 @@ jobs:
         EVENT_NAME: ${{ github.event_name }}
         BEFORE: ${{ github.event.before }}
       run: |
-        # 每种事件的检查基线:
-        #   pull_request -> 与目标分支的 merge-base;
-        #   push         -> 上一提交(weblate 机器人会直推 master,也要拦);
-        #   release/tag dispatch -> merge-base 退化 HEAD(tag 指向的提交在
-        #   master 落地时已被 PR 检查过),自然通过,不再是空转的假 job。
+        # Select the formatting baseline for each event:
+        # pull_request: merge-base with its target; push: the previous commit.
+        # For a release or tag dispatch, the baseline can be HEAD because the
+        # commit was already checked when it reached master.
         if [ -n "$BASE_REF" ]; then
           BASE=$(git merge-base "origin/$BASE_REF" HEAD)
         elif [ "$EVENT_NAME" = "push" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
@@ -113,17 +110,17 @@ jobs:
         else
           BASE=$(git merge-base origin/master HEAD)
         fi
-        echo "格式检查基线: $BASE (event=$EVENT_NAME)"
-        # git clang-format --diff 只对 diff 触及的行重排并报告结果,不改工作区。
-        # 无需格式化时输出 "none" / "no modified files to format" 等固定文案。
+        echo "Formatting baseline: $BASE (event=$EVENT_NAME)"
+        # Report formatting changes only for touched lines, without changing the worktree.
+        # Clean results use messages such as 'no modified files to format'.
         OUTPUT=$(git clang-format --diff --style file "$BASE" 2>&1)
         case "$OUTPUT" in
           none|*"no modified files to format"|*"clang-format did not modify any files")
-            echo "格式检查通过"
+            echo "Formatting check passed"
             ;;
           *)
             echo "$OUTPUT"
-            echo "::error::C++ 改动行未通过 clang-format。本地执行 pip install clang-format==21.1.8 后跑 git clang-format 即可自动修复"
+            echo "::error::Changed C++ lines need formatting. Install clang-format==21.1.8 and run git clang-format locally."
             exit 1
             ;;
         esac
@@ -141,8 +138,8 @@ jobs:
     - name: Get version
       shell: cmd
       run: |
-        rem 在源码污染（setup-deps、构建过程会改 tracked 文件）之前固化版本号，
-        rem 写入 CI_VERSION 让后续 derive-version.py 调用直接采用此值，避免出现 .dirty 后缀。
+        rem Resolve the version before dependency setup or builds modify tracked files.
+        rem Store CI_VERSION so subsequent version derivation does not add a .dirty suffix.
         for /f "delims=" %%i in ('python scripts\derive-version.py --field artifact') do echo VERSION=%%i >> %GITHUB_ENV%
         for /f "delims=" %%i in ('python scripts\derive-version.py --field artifact') do echo CI_VERSION=%%i >> %GITHUB_ENV%
 
@@ -219,8 +216,8 @@ jobs:
     - name: Test input & overlay logic
       shell: cmd
       run: |
-        rem 统一入口 scripts\run-test.bat:qmake -> jom release -> 运行,法规约见脚本头注释。
-        rem 新增测试时在这里加一对 call + errorlevel 检查即可。
+        rem Shared test entry point: qmake, jom release, then execution. See the script header.
+        rem Add each new test with a call followed by an errorlevel check.
         call scripts\run-test.bat ds5_ir_renderer ds5_ir_renderer_test
         if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat pen_history_selection pen_history_selection_test
@@ -233,7 +230,7 @@ jobs:
         if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat overlay_toast_event_state overlay_toast_event_state
         if errorlevel 1 exit /b %ERRORLEVEL%
-        rem overlay_menu_navigation 用 QTest 合成鼠标事件,CI 无桌面会话,必须 offscreen
+        rem QTest synthesizes mouse events; use offscreen because CI has no desktop session.
         set QT_QPA_PLATFORM=offscreen
         call scripts\run-test.bat overlay_menu_navigation overlay_menu_navigation
         if errorlevel 1 exit /b %ERRORLEVEL%
@@ -241,7 +238,7 @@ jobs:
     - name: Test compiled Chinese translations and settings navigation layout
       shell: cmd
       run: |
-        rem qmltestrunner 流程与普通测试不同,不走 run-test.bat。
+        rem qmltestrunner has its own invocation and does not use run-test.bat.
         lrelease app\languages\qml_zh_CN.ts
         if errorlevel 1 exit /b %ERRORLEVEL%
         set QT_QPA_PLATFORM=offscreen
@@ -251,7 +248,7 @@ jobs:
     - name: Test clipboard / cursor / file-mapping / overlay layout logic
       shell: cmd
       run: |
-        rem 以下均为 QCoreApplication 纯逻辑测试,已在本机以 Qt 6.11.1 + MSVC 逐一验证。
+        rem These QCoreApplication logic tests were validated with Qt 6.11.1 and MSVC.
         call scripts\run-test.bat cursor_shape_classification cursor_shape_classification
         if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat clipboard_payload_routing clipboard_payload_routing
@@ -272,8 +269,8 @@ jobs:
         if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat usb_forwarding_backend_list usb_forwarding_backend_list_test
         if errorlevel 1 exit /b %ERRORLEVEL%
-        rem usb_forwarding_tunnel 是需要真实 USB/IP 会话的手动联调探针,不进 CI,
-        rem 用法见 tests/README.md。
+        rem usb_forwarding_tunnel requires a real USB/IP session and is a manual probe.
+        rem See tests/README.md for usage.
 
     - name: Install Qt arm64
       uses: jdpurcell/install-qt-action@v5
@@ -376,8 +373,8 @@ jobs:
       run: |
         HELPER="build/build-Release/app/Moonlight.app/Contents/MacOS/moonlight-usbd"
         test -x "$HELPER"
-        # helper 必须静态链 libusb/usbipdcpp：一旦解析到 Homebrew 的
-        # libusb dylib，CI 上能跑、用户机器上必挂。
+        # Statically link libusb/usbipdcpp: Homebrew dylibs may work on the runner
+        # but will not be available on end-user machines.
         if otool -L "$HELPER" | grep -q "libusb"; then
           otool -L "$HELPER"
           echo "helper dynamically links libusb!" >&2
@@ -394,20 +391,19 @@ jobs:
         if-no-files-found: error
 
   build-linux:
-    # x86_64 用标准 runner，aarch64 用 GitHub 的免费 ARM runner（公共仓库可用）。
+    # Use the standard x86_64 runner and GitHub's public-repository ARM runner.
     #
-    # 两边的基线故意不一样：x86_64 留在 22.04 把 AppImage 的 glibc 下限压到 2.35，
-    # 而 aarch64 必须上 24.04 —— Qt 官方的 linux_arm64 二进制（含 moc 这些 host 工具）
-    # 是在 glibc 2.38 上编的，放到 jammy 上跑 moc 直接 `GLIBC_2.38 not found`。
-    # 代价是 arm64 的 AppImage 需要 glibc >= 2.39，Debian 12 / RPi OS bookworm 用不了，
-    # 得等 trixie。想再往下压只能自己编 Qt，不值。
+    # x86_64 stays on Ubuntu 22.04 for a glibc 2.35 AppImage baseline.
+    # Qt's ARM64 tools require glibc 2.38, so ARM64 uses Ubuntu 24.04.
+    # Its AppImage needs glibc >= 2.39 and cannot run on Debian 12 / Raspberry Pi
+    # OS bookworm; use trixie or later. An older baseline requires building Qt.
     name: build-linux (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     env:
       APPIMAGE_UPDATE_TAG: ${{ github.event_name == 'release' && github.event.release.prerelease && 'latest-pre' || 'latest' }}
 
     strategy:
-      # 一边挂了不要连累另一边，方便单独看是哪个架构的问题。
+      # Keep one architecture's failure from cancelling the other architecture's diagnostics.
       fail-fast: false
       matrix:
         include:
@@ -451,8 +447,8 @@ jobs:
         echo "PKG_CONFIG_PATH=$HOME/local/lib/pkgconfig:$HOME/local/lib/${{ matrix.multiarch }}/pkgconfig" >> $GITHUB_ENV
         echo "UBUNTU_RELEASE=$(lsb_release -rs)" >> $GITHUB_ENV
 
-    # 编译缓存:SDL3/FFmpeg/libplacebo 等源码依赖每次全量重编是本 job 的耗时大头。
-    # 这些依赖的 REV 全部钉死,ccache 命中率接近 100%;app 自身增量变更也吃得到。
+    # Cache expensive SDL3/FFmpeg/libplacebo compilation. Dependency revisions are pinned,
+    # allowing high cache reuse; incremental application builds also benefit.
     - name: Restore ccache
       uses: actions/cache@v4
       with:
@@ -464,25 +460,21 @@ jobs:
     - name: Install ccache
       run: |
         sudo apt-get install -y ccache
-        # 把 /usr/lib/ccache(编译器包装器目录)顶到 PATH 最前,cmake/make/configure 无感知接入
+        # Put compiler wrappers first so cmake, make, and configure use ccache transparently.
         echo "/usr/lib/ccache" >> $GITHUB_PATH
         ccache --max-size=2G
         ccache -z
 
-    # 注意顺序：上面的 install-qt-action 已经装好了 6.11.1 并把它的 qmake 放进 PATH，
-    # （Qt 暂回 6.11.1：6.11.2 下 overlay_button_native_wake 各唤醒点全挂，
-    #   疑似 6.11.2 XCB 事件投递行为变化，排查清楚前不跟）
-    # 这一步在它之后。所以这里不要再 apt 装任何 Qt 包 —— 发行版的 Qt（jammy 上是
-    # 6.2.x）不会被用到，装了只是白下载，还可能在 AppImage 打包阶段被扫进去。
+    # Qt 6.11.1 and its qmake are already installed. Do not install distro Qt packages:
+    # they would go unused and could be included accidentally during AppImage packaging.
+    # Stay on 6.11.1 while investigating native overlay wake failures with Qt 6.11.2 XCB.
     - name: Install packaged deps
       run: |
-        # LunarG 的源只发 amd64/i386（dists/jammy/main 下就没有 binary-arm64），
-        # 所以 vulkan-sdk 这条路只有 x86_64 能走，arm64 用发行版的 loader，
-        # 头文件和 glslang 在下一步单独编。
+        # LunarG provides amd64/i386 packages, not ARM64. Use its SDK on x86_64;
+        # ARM64 needs the distro loader plus separately built Vulkan components.
         if [[ "${{ matrix.arch }}" == "x86_64" ]]; then
           wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
-          # 1.4.313 只有 jammy/noble 的 list(focal 已停发);矩阵里 LunarG 只在
-          # 22.04 上消费,固定用 jammy 的
+          # LunarG 1.4.313 provides jammy/noble lists, not focal. This matrix uses jammy.
           sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.4.313-jammy.list https://packages.lunarg.com/vulkan/1.4.313/lunarg-vulkan-1.4.313-jammy.list
         fi
         sudo apt update || true
@@ -498,12 +490,10 @@ jobs:
         if [[ "${{ matrix.arch }}" == "x86_64" ]]; then
           sudo apt install -y vulkan-sdk
         else
-          # libplacebo 需要一个 SPIR-V 编译器，否则 Vulkan 渲染器编得出来但跑不起来。
-          # x86_64 是从 LunarG SDK 里拿 shaderc 2023.8.1，noble 自带的 libshaderc-dev
-          # 正好也是 2023.8，两个架构走同一条代码路径。
-          # 别换成 glslang：libplacebo 那边是用 cxx.find_library('SPIRV') 找的，
-          # 装到 /usr/local 也认不出来（试过，summary 里 glslang 一样是 NO），
-          # 而 shaderc 走 pkg-config，稳。
+          # libplacebo needs a SPIR-V compiler for a working Vulkan renderer.
+          # Both LunarG on x86_64 and noble's libshaderc-dev provide shaderc 2023.8.
+          # Prefer shaderc's pkg-config detection: glslang's SPIRV library was not
+          # detected reliably even when installed under /usr/local.
           sudo apt install -y libshaderc-dev
         fi
 
@@ -511,9 +501,8 @@ jobs:
         echo "Installing XCB runtime libraries..."
         sudo apt install -y libxcb1 libxcb-cursor0 libxcb-keysyms1 libxcb-image0 libxcb-shm0 libxcb-icccm4 libxcb-sync1 libxcb-xfixes0 libxcb-shape0 libxcb-randr0 libxcb-render0 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1 libxcb-util1
 
-        # 24.04 起 pip 是 externally-managed，`pip3 install` 会直接被 PEP 668 拒掉；
-        # 好在 noble 自带的 meson 已经 1.3，够 libplacebo（>= 0.63）用。jammy 的是
-        # 0.61，太老，只能继续走 pip。
+        # Ubuntu 24.04 enforces PEP 668, but its Meson 1.3 meets libplacebo's >= 0.63
+        # requirement. Jammy ships Meson 0.61 and still needs the pip installation.
         if [[ $UBUNTU_RELEASE == "24.04" ]]; then
           sudo apt install -y meson
         else
@@ -536,15 +525,14 @@ jobs:
         pushd tests/overlay_button_native_wake
         qmake overlay_button_native_wake.pro
         make -j"$(nproc)"
-        # xvfb 下 XTest 合成事件与异步唤醒的时序受 runner 负载影响,偶发抖动
-        # (失败点会在多个唤醒断言间轮转);失败自动整测重跑一次
+        # Runner load can disturb XTest/asynchronous wake ordering under xvfb.
+        # Retry the complete test once if a wake assertion fails.
         QT_QPA_PLATFORM=xcb xvfb-run -a ./overlay_button_native_wake ||         QT_QPA_PLATFORM=xcb xvfb-run -a ./overlay_button_native_wake
         popd
 
-    # arm64 上没有 LunarG 源，Vulkan 那套要手工补：noble 自带的 loader 是 1.3.275，
-    # 而 FFmpeg configure 卡的是 `vulkan >= 1.3.277`（pkg-config 版本号），差这么一点
-    # 也过不去，不补的话 *_vulkan hwaccel 直接把 configure 打挂。vulkan.pc 是 Loader
-    # 装的，只装 Headers 不够，所以两个都得编。
+    # ARM64 lacks the LunarG repository. Noble's Vulkan loader 1.3.275 is older
+    # than FFmpeg's >= 1.3.277 requirement. Build both Headers and Loader:
+    # Loader installs vulkan.pc; Headers alone cannot satisfy configure.
     - name: Build Vulkan loader (aarch64)
       if: matrix.arch == 'aarch64'
       run: |
@@ -577,7 +565,7 @@ jobs:
 
     - name: Build sdl2-compat
       run: |
-        # release-2.32.70 的不可变 commit(可变 ref 会让同 workflow 拿到不同源码)
+        # Immutable commit for release-2.32.70; mutable refs can change a workflow's sources.
         export SDL2_COMPAT_REV=a53b6ad90ecd2d0ccfe01d5cfd2059793acf8c12
         git clone https://github.com/libsdl-org/sdl2-compat.git sdl2-compat
         cd sdl2-compat
@@ -645,11 +633,10 @@ jobs:
         fi
         git submodule update --init --recursive
         meson setup build -Dvulkan=enabled -Dopengl=disabled -Ddemos=false
-        # libplacebo 在两个 SPIR-V 编译器都找不到的情况下不会报错，只是在 summary 里
-        # 写 shaderc/glslang: NO，然后编出一个 Vulkan 渲染器跑不起来的库。arm64 第一版
-        # 就是这么静默退化的，所以在这儿拦一道。
+        # libplacebo can build without shaderc or glslang while producing a nonfunctional
+        # Vulkan renderer. Fail explicitly instead of allowing that silent degradation.
         if ! grep -qE "^ +(shaderc|glslang) +: +YES" build/meson-logs/meson-log.txt; then
-          echo "::error::libplacebo 没找到任何 SPIR-V 编译器（shaderc/glslang），Vulkan 渲染器会编得过但跑不起来"
+          echo "::error::libplacebo found no SPIR-V compiler (shaderc/glslang); the Vulkan renderer would not work."
           exit 1
         fi
         ninja -C build
@@ -676,8 +663,8 @@ jobs:
     - name: Install linuxdeploy
       run: |
         mkdir -p $HOME/bin
-        # 文件名要和 build-appimage.sh 里的 linuxdeploy-$(uname -m).AppImage 对得上：
-        # uname -m 在两台 runner 上分别是 x86_64 / aarch64，正好是上游的资产名。
+        # Match build-appimage.sh's linuxdeploy-$(uname -m).AppImage filename.
+        # Both runner architectures match the upstream x86_64/aarch64 asset names.
         wget -O $HOME/bin/linuxdeploy-${{ matrix.arch }}.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${{ matrix.arch }}.AppImage
         wget -O $HOME/bin/linuxdeploy-plugin-qt-${{ matrix.arch }}.AppImage https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-${{ matrix.arch }}.AppImage
         chmod a+x $HOME/bin/linuxdeploy*.AppImage
@@ -712,7 +699,7 @@ jobs:
       env:
         APPIMAGE_EXTRACT_AND_RUN: 1
       run: |
-        # Qt5 环境变量已废弃，使用 Qt6 环境
+        # Use the Qt 6 environment; Qt 5 environment variables are obsolete.
         # export QT_SELECT=5
         # export PATH=/usr/lib/qt5/bin:$PATH
         # export QT_QPA_PLATFORM_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/qt5/plugins
@@ -782,9 +769,8 @@ jobs:
     - name: Download SteamLink SDK
       if: steps.steamlink-sdk.outputs.cache-hit != 'true'
       run: |
-        # restore-keys 命中上周缓存时目录已存在——不能直接沿用,否则旧 SDK 会被
-        # cache post-step 打上本周的新 key 无限传递。fetch + reset 到远端 HEAD,
-        # 让 SDK 始终跟住上游默认分支(变更不频繁,fetch 增量很小)。
+        # A fallback cache may contain last week's SDK. Fetch and reset to upstream
+        # HEAD before saving this week's cache so an old checkout cannot persist forever.
         if [ -d "$HOME/steamlink-sdk/.git" ]; then
           git -C "$HOME/steamlink-sdk" fetch --depth=1 origin
           git -C "$HOME/steamlink-sdk" remote set-head origin --auto

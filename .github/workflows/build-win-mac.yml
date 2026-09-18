@@ -4,8 +4,7 @@ permissions:
   contents: read
 
 on:
-  # 目前没有别的 workflow 调用这一份（发布走 build.yml），加上手动触发至少让它
-  # 可以被单独跑一次验证，而不是躺在仓库里永远不执行。
+  # Releases use build.yml. Manual dispatch also allows this standalone workflow to be tested.
   workflow_dispatch:
     inputs:
       ci_version:

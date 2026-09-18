@@ -48,8 +48,7 @@ Item {
         }
     }
 
-    // 和串流加载页 / 退出页同一套：Manrope 800 左对齐阶段文字 + 斜条纹读条。
-    // 命令行入口以前还留着转圈的 BusyIndicator，那是整个应用里最后几处圆形动效。
+    // Match stream loading/exit pages: left-aligned Manrope 800 stage text and a striped bar.
     Column {
         anchors.centerIn: parent
         width: Math.min(parent.width - Theme.spaceXl * 2, 620)

@@ -311,8 +311,8 @@ void SdlGamepadKeyNavigation::suspendUiNavMode()
 
 void SdlGamepadKeyNavigation::resumeUiNavMode()
 {
-    // 夹住下界：QML 侧的 Popup 在某些时序下会重复发 aboutToHide，
-    // 计数掉到负数之后就再也回不到挂起状态了。
+    // Clamp at zero because Popup may emit aboutToHide twice; a negative count
+    // would prevent subsequent suspension from taking effect.
     if (m_UiNavSuspendCount > 0) {
         m_UiNavSuspendCount--;
     }

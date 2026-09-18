@@ -46,12 +46,10 @@ public:
 
     Q_INVOKABLE QVariantList getConnectionAddresses();
 
-    // 地址选择框的条目列表。PcView 和 AppView 用同一个 QML 组件
-    // （SelectAddressDialog），所以条目形状和「哪一项算选中」的判定必须一致 ——
-    // 放在一处，ComputerModel 也调这里。
+    // Shared entry construction for PcView/AppView's SelectAddressDialog. ComputerModel
+    // also uses this function so the schema and selected-entry rules remain identical.
     //
-    // 翻译上下文特意留在 AppModel：这几个字符串在 AppModel 下已经有译文了，
-    // 换个上下文会让它们退回英文。
+    // Keep the AppModel translation context to reuse existing translated strings.
     static QVariantList buildConnectionAddressList(NvComputer* computer);
 
     Q_INVOKABLE bool hasMultipleConnectionAddresses();

@@ -7,11 +7,10 @@
 
 namespace {
 
-// alpha 高于这个值算不透明。抗锯齿的边缘像素 alpha 很低，一并当透明处理，
-// 免得包围盒被一圈几乎看不见的羽化撑大。
+// Treat low-alpha antialiased edges as transparent so faint pixels do not inflate bounds.
 constexpr int OpaqueAlphaThreshold = 32;
 
-// 正常的光标不会比这更大。超过就当成不认识，走位图。
+// Larger-than-normal cursors remain unknown and use bitmap rendering.
 constexpr int MaxCursorDimension = 128;
 
 qreal medianOf(QVector<int> values)
@@ -67,7 +66,7 @@ CursorShapeMetrics measureCursorShape(int width,
     }
 
     if (right < 0) {
-        // 整张全透明。主机偶尔会用它表示"光标不可见"。
+        // A fully transparent bitmap may represent a hidden host cursor.
         return metrics;
     }
 
@@ -148,7 +147,7 @@ CursorShapeMetrics measureCursorShape(int width,
             qBound(-1.0, covXY / std::sqrt(varX * varY), 1.0);
     }
 
-    // 正中那块的不透明占比。圆环中间是空的，四向箭头和十字的臂在中心交汇是实的。
+    // Central opacity distinguishes hollow rings from solid intersecting arrow/cross arms.
     const int centerLeft = boxWidth * 3 / 8;
     const int centerTop = boxHeight * 3 / 8;
     const int centerWidth = qMax(1, boxWidth / 4);
@@ -212,7 +211,7 @@ NativeCursorShape classifyCursorShape(const CursorShapeMetrics& metrics)
         return NativeCursorShape::Unknown;
     }
 
-    // >1 表示竖着长
+    // Values greater than one indicate a vertically elongated shape.
     const qreal tallness =
         static_cast<qreal>(metrics.boxHeight) / metrics.boxWidth;
     const bool centeredHotspot =
@@ -220,19 +219,18 @@ NativeCursorShape classifyCursorShape(const CursorShapeMetrics& metrics)
         metrics.hotspotY >= 0.30 && metrics.hotspotY <= 0.70;
     const bool nearSquare = tallness >= 0.80 && tallness <= 1.25;
 
-    // I 型：细长、左右对称、热点居中，而且第一行就是最宽的那道衬线。
-    // 最后那条不能松——上下双箭头同样细长、左右对称、热点也居中，两者只能靠
-    // "顶端是齐平的衬线"还是"顶端是尖的、最宽处在箭头根部"分开。
+    // I-beam: narrow, vertically symmetric, centered hotspot, and a widest first-row serif.
+    // The flat top distinguishes it from vertical resize arrows with pointed tips.
     //
-    // tallness 这一档是照实测定的：Windows 64×64 的 I 型包围盒是 21×36，比值只有
-    // 1.71 —— 衬线相对整体高度比想象的宽。原先按 1.8 卡，真货全被挡在外面。
+    // Measured Windows 64x64 I-beam bounds are 21x36 (1.71 tallness).
+    // A 1.8 threshold incorrectly rejected real cursors with relatively wide serifs.
     if (tallness >= 1.5 && metrics.fill <= 0.60 && metrics.symV >= 0.85 &&
         centeredHotspot &&
         metrics.firstRowRatio >= 0.90 && metrics.topWidthRatio >= 1.5) {
         return NativeCursorShape::IBeam;
     }
 
-    // 箭头：热点钉在左上角，顶端是尖的、三角头部自上而下变宽，左右明显不对称
+    // Arrow: top-left hotspot, pointed expanding triangular head, and clear asymmetry.
     if (metrics.hotspotX <= 0.20 && metrics.hotspotY <= 0.20 &&
         tallness >= 1.15 && tallness <= 2.6 &&
         metrics.symV <= 0.65 &&
@@ -241,14 +239,14 @@ NativeCursorShape classifyCursorShape(const CursorShapeMetrics& metrics)
         return NativeCursorShape::Arrow;
     }
 
-    // 「后台忙」的箭头 + 转圈（IDC_APPSTARTING）。热点还钉在箭头尖上（包围盒最左），
-    // 但右上角多出来的圆环把盒子撑宽、也把热点在盒内的纵向位置压过了箭头那条
-    // hotspotY ≤ 0.20，所以跟上面的箭头天然互斥。
+    // IDC_APPSTARTING adds a ring at the arrow's upper right. Its leftmost hotspot
+    // remains at the tip, but the expanded bounds move hotspotY beyond the plain
+    // arrow's <= 0.20 criterion, making these cases mutually exclusive.
     //
-    // 实测（Windows 64×64）：box=44x53 fill=0.446 hotspot=(0.00,0.29) symV=0.409
-    // corr=-0.540。corr 是负的，因为质量分成两坨——箭头在左侧竖着铺，圆环在右上角。
-    // 圈是转的，逐帧会抖，所以卡得紧的都是不随转动变化的量（包围盒、热点），corr 这
-    // 类会抖的只当个方向性的粗筛。
+    // Windows 64x64 sample: bounds=44x53, fill=0.446, hotspot=(0.00,0.29),
+    // symV=0.409, corr=-0.540. The left arrow and upper-right ring form separate
+    // masses. Use stable bounds/hotspot constraints and only coarse correlation
+    // limits because the animated ring changes frame-to-frame measurements.
     if (metrics.hotspotX <= 0.15 &&
         metrics.hotspotY > 0.20 && metrics.hotspotY <= 0.45 &&
         tallness >= 0.90 && tallness <= 1.60 &&
@@ -258,10 +256,9 @@ NativeCursorShape classifyCursorShape(const CursorShapeMetrics& metrics)
         return NativeCursorShape::AppStarting;
     }
 
-    // 手型：热点是食指指尖，在顶端偏中；从指尖往下张开成拳头，所以顶端窄、上半部分
-    // 基本单调变宽、最宽处落在下半部分。这是几条里最容易误判的一条，阈值卡得比别的
-    // 紧——没有后三项，任何一块顶部带热点的不规则色块都会被认成手型。
-    // symV 只用来挡掉左右完全对称的形状；真实的手型有拇指，本来就不对称。
+    // Hand: near-top central fingertip, narrow top expanding toward a wider lower fist.
+    // Strict width-profile constraints reject arbitrary top-hotspot blobs. Vertical
+    // symmetry only excludes fully symmetric shapes; a real thumb is asymmetric.
     if (tallness >= 0.85 && tallness <= 1.45 &&
         metrics.hotspotY <= 0.20 &&
         metrics.hotspotX >= 0.15 && metrics.hotspotX <= 0.60 &&
@@ -273,19 +270,19 @@ NativeCursorShape classifyCursorShape(const CursorShapeMetrics& metrics)
         return NativeCursorShape::Hand;
     }
 
-    // 剩下几种缩放光标的热点都在正中
+    // Remaining resize cursors have centered hotspots.
     if (!centeredHotspot) {
         return NativeCursorShape::Unknown;
     }
 
-    // 等待光标（IDC_WAIT）：一个中空的圈。
+    // IDC_WAIT is a hollow ring.
     //
-    // 实测（Windows 64×64）：box=40x40 fill=0.570 hotspot=(0.51,0.51)
-    // symV=symH=symRot180=1.000 corr=0.000 widestRow=0.205。转的是亮度、alpha 掩码
-    // 是静止的整圈，所以逐帧度量完全一致，不用担心动画抖动。
+    // Windows 64x64 sample: bounds=40x40, fill=0.570, hotspot=(0.51,0.51),
+    // symV=symH=symRot180=1.000, corr=0.000, widestRow=0.205. Brightness
+    // animates but the alpha mask stays fixed, so measurements do not fluctuate.
     //
-    // 十字和四向箭头同样是"近方形 + 四重对称 + 热点居中"，跟这条挤在一起，靠两点
-    // 分开：圈的填充率高得多，而且中心是空的（centerFill≈0，它们的臂在中心交汇）。
+    // Crosses and four-way arrows share square bounds, symmetry, and a centered hotspot.
+    // The ring has higher overall fill and an empty center, unlike their intersecting arms.
     if (nearSquare &&
         metrics.symV >= 0.90 && metrics.symH >= 0.90 &&
         metrics.symRot180 >= 0.90 &&
@@ -294,20 +291,20 @@ NativeCursorShape classifyCursorShape(const CursorShapeMetrics& metrics)
         return NativeCursorShape::Wait;
     }
 
-    // 左右双箭头
+    // Horizontal resize arrow.
     if (tallness <= 1.0 / 1.8 && metrics.symV >= 0.85 && metrics.symH >= 0.80) {
         return NativeCursorShape::SizeWE;
     }
 
-    // 上下双箭头。firstRowRatio 小说明顶端是尖的，把 I 型排除在外。
+    // Vertical resize arrow: a low firstRowRatio identifies the tip and excludes I-beams.
     if (tallness >= 1.8 && metrics.symH >= 0.85 && metrics.symV >= 0.80 &&
         metrics.firstRowRatio <= 0.60) {
         return NativeCursorShape::SizeNS;
     }
 
-    // 对角双箭头：整块质量沿某一条对角线铺开，用带符号的相关系数定方向。
-    // 十字、四向箭头、实心块这类没有方向性的形状相关系数接近 0，会落到
-    // Unknown 去画位图——正是我们要的保守行为。
+    // Diagonal resize arrows concentrate mass along a diagonal; signed correlation
+    // identifies direction. Nondirectional crosses, blocks, and four-way arrows
+    // remain Unknown and safely fall back to the host bitmap.
     if (nearSquare && metrics.fill <= 0.45 && metrics.symRot180 >= 0.85) {
         if (metrics.diagonalCorrelation >= 0.70) {
             return NativeCursorShape::SizeNWSE;

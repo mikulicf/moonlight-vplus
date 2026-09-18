@@ -4,8 +4,8 @@ import QtQuick.Layouts 1.3
 import "."
 import "../theme"
 
-// 基地客户端生态：左侧选择平台，右侧展示对应客户端和官方入口。
-// 数据只包含固定项目与固定 URL，不保存选择，也不参与任何串流状态。
+// Platform selector and client project links. Static data only; it neither saves
+// selection nor participates in streaming state.
 Item {
     id: catalog
 

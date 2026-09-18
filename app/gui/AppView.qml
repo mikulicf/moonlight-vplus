@@ -1,8 +1,7 @@
-// 不带版本号。原来写的是 2.9，而下面 DisplayChip 用的 HoverHandler 是 QtQuick
-// 2.15（Qt 5.15）才有的类型 —— 运行期类型解析失败，整个文件加载不了，点 PC 进不来
-// （qmlcachegen 不做完整类型解析，所以编译期无感）。
-// 不写具体版本是跟 main.qml 一致：仓库里 35 个文件已经在用无版本号的
-// import QtQuick.Controls，那种写法本身就要求 Qt 5.15+，版本下限早就在那里了。
+// Leave QtQuick unversioned: HoverHandler requires QtQuick 2.15 / Qt 5.15.
+// Importing 2.9 compiles with qmlcachegen but fails type resolution at runtime,
+// preventing the app view from loading. Existing unversioned Controls imports
+// already establish the same minimum version.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Window 2.2
@@ -15,7 +14,7 @@ import StreamingPreferences 1.0
 import "theme"
 
 CenteredGridView {
-    // 这一页自带壁纸，main.qml 不用再垫一层
+    // This page provides its own wallpaper; main.qml must not add another layer.
     readonly property bool usesOwnBackground: true
     readonly property int nameRole: AppModel.NameRole
     readonly property int runningRole: AppModel.RunningRole
@@ -34,28 +33,28 @@ CenteredGridView {
     id: appGrid
     focus: true
     activeFocusOnTab: true
-    topMargin: 72   // 工具栏 56 + 一格间距
+    topMargin: 72   // 56-pixel toolbar plus one spacing unit.
     bottomMargin: 5
     cellWidth: 230; cellHeight: 297;
 
-    // 当前选中显示器的界面 ID: "" = 未选, "vdd" = VDD, 其他 = 唯一的物理显示器 ID
+    // Selected display UI ID: empty for none, vdd for VDD, otherwise a unique physical ID.
     property string selectedDisplayId: ""
-    // 实际发送给 Sunshine 的显示器目标；与界面 ID 分开，避免同名显示器互相覆盖
+    // Host display target is separate from the UI ID to distinguish duplicate display names.
     property string selectedDisplayTarget: ""
-    // 当前选中是否 VDD
+    // Whether the selected display is a VDD.
     property bool isVddSelected: selectedDisplayId === "vdd"
-    // 物理显示器列表
+    // Physical display list.
     property var displayList: []
-    // 是否有多个连接地址
+    // Whether multiple connection addresses are available.
     property bool hasMultipleAddresses: appModel.hasMultipleConnectionAddresses()
-    // 当前活动地址信息
+    // Current active address information.
     property var activeAddressInfo: appModel.getActiveAddressInfo()
 
-    // 显示器 / VDD 选择按钮。以前是裸 Rectangle + MouseArea，手柄和键盘完全够不到 ——
-    // 而这个弹窗是切换 VDD 的唯一入口。换成 AbstractButton 才能进焦点链。
+    // Use AbstractButton so the only display/VDD selector participates in keyboard
+    // and gamepad focus navigation; Rectangle plus MouseArea could not be reached.
     //
-    // 这一页的手柄导航是「普通模式」（uiNavMode 为假，方向键原样发过来，没有 Tab），
-    // 所以四个方向都得自己接：左右在同一排里走，上下进出下面的组合模式下拉。
+    // AppView uses normal gamepad navigation (uiNavMode false), with direction keys
+    // rather than Tab. Handle horizontal chips and vertical entry to the combination selector.
     component DisplayChip: AbstractButton {
         id: chip
 
@@ -80,8 +79,8 @@ CenteredGridView {
             border.color: chip.selected ? chip.selectedBorder : Theme.lineStrong
             border.width: 1
 
-            // 选中态是 accent 实心填充，描边腾不出来表达焦点（accent 描 accent 等于
-            // 看不见），所以焦点走统一的外挂方角环。
+            // Selected chips use a solid accent fill, so show focus with the shared
+            // external square ring rather than an invisible accent-on-accent border.
             FocusRing {
                 visible: chip.visualFocus
             }
@@ -102,9 +101,8 @@ CenteredGridView {
             verticalAlignment: Text.AlignVCenter
         }
 
-        // 向下的去向。chips 住在一个横向 Flow 里，焦点链的下一项是同一行的下一颗，
-        // 不是「下面那个控件」—— 纵向只能显式指定。为空表示这个方向没有去处，
-        // 吃掉按键。
+        // Explicit downward focus target: Flow's next focus item is horizontal.
+        // An empty target consumes the key because there is no control below.
         property Item navDownItem: null
 
         function moveFocus(forward) {
@@ -113,15 +111,15 @@ CenteredGridView {
 
         Keys.onReturnPressed: clicked()
         Keys.onEnterPressed: clicked()
-        // 左右沿焦点链走：Flow 的排列顺序就是焦点链顺序，横向是对得上的
+        // Horizontal focus-chain order matches the Flow's visual order.
         Keys.onRightPressed: moveFocus(true)
         Keys.onLeftPressed: moveFocus(false)
         Keys.onDownPressed: if (navDownItem) navDownItem.forceActiveFocus(Qt.TabFocusReason)
-        // chips 上方没有可聚焦的东西（只有标题和分隔线），吃掉
+        // Nothing above the chips accepts focus; consume upward navigation.
         Keys.onUpPressed: {}
     }
 
-    // 加载显示器列表
+    // Load the display list.
     function loadDisplays() {
         var displays = appModel.getDisplayList()
         var selectedDisplayStillAvailable = selectedDisplayId === "" || selectedDisplayId === "vdd"
@@ -147,45 +145,42 @@ CenteredGridView {
         }
     }
 
-    // 屏幕选择弹窗
+    // Display selection dialog.
     function openDisplayDialog() {
         loadDisplays()
         displayDialog.open()
     }
 
-    // IP选择弹窗
+    // Address selection dialog.
     function openIpDialog() {
         ipDialog.addresses = appModel.getConnectionAddresses()
         ipDialog.open()
     }
 
-    // 走 NavigableDialog 而不是裸 Popup：方角 Panel、ink 遮罩、宽字距大写标题、
-    // 关闭时归还焦点，这些在那个壳里已经实现过一遍了。
+    // NavigableDialog provides the square panel, dimming, title, and focus restoration.
     NavigableDialog {
         id: displayDialog
 
         title: qsTr("Display Settings")
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
-        // 宽度显式给，别让内容撑：下面的 Column 按 availableWidth 排版，
-        // 两边互相依赖就成环了。
+        // Set width explicitly to avoid a binding loop with the Column's availableWidth.
         width: Math.min(500, appGrid.width - 40)
 
-        // 这个框没有确定 / 取消：选中即生效，靠 B / Esc / 点外面关掉。
-        // NavigableDialog 的 footer 在没有 standardButtons 时不显示。
+        // Selection applies immediately; close with B, Escape, or an outside click.
+        // Without standardButtons, NavigableDialog hides its footer.
 
-        // 光把焦点给弹窗本体不够，手柄用户还得盲按一下才有高亮。
-        // 开的时候直接落到当前选中的显示器上。
+        // Focus the selected display on opening so gamepad users immediately see selection.
         onOpened: focusInitialItem()
 
-        // 基类的 onClosed 会把焦点还给 stackView，这里再收紧到应用网格本身。
-        // QML 的信号处理器是累加的，基类那份仍然会执行。
+        // The base onClosed restores stackView focus; refine it to the app grid here.
+        // QML handlers accumulate, so the base handler still runs.
         onClosed: appGrid.forceActiveFocus()
 
         function focusInitialItem() {
             for (var i = 0; i < displayChips.children.length; i++) {
                 var chip = displayChips.children[i]
-                // Repeater 自己也在 children 里，但它没有 selected，会自动跳过
+                // Repeater is also a child but has no selected property and is skipped.
                 if (chip.selected) {
                     chip.forceActiveFocus(Qt.TabFocusReason)
                     return
@@ -198,9 +193,9 @@ CenteredGridView {
             width: displayDialog.availableWidth
             spacing: Theme.spaceLg
 
-            // 标题和它下面那条分隔线现在由 NavigableDialog 的 header 提供
+            // NavigableDialog supplies the title and separator in its header.
 
-            // 显示器选择区
+            // Display selection area.
             MicroLabel {
                 text: qsTr("Select Display:")
             }
@@ -223,7 +218,7 @@ CenteredGridView {
                     }
                 }
 
-                // 动态物理显示器按钮
+                // Dynamically generated physical display buttons.
                 Repeater {
                     model: ListModel { id: displayListModel }
 
@@ -239,7 +234,7 @@ CenteredGridView {
                     }
                 }
 
-                // VDD 按钮
+                // VDD button.
                 DisplayChip {
                     id: vddChip
                     text: qsTr("VDD Display")
@@ -321,7 +316,7 @@ CenteredGridView {
         appModel.computerLost.connect(computerLost)
         activated = true
 
-        // 从服务端加载显示器列表
+        // Load available displays from the host.
         loadDisplays()
 
         // Self-heal the running-game indicator in case our cached state
@@ -373,49 +368,47 @@ CenteredGridView {
         property alias appContextMenu: appContextMenuLoader.item
         property alias appNameText: appNameTextLoader.item
 
-        // hover / 手柄高亮 / 键盘焦点走同一套视觉，别分三种状态
+        // Use the same visual treatment for hover, gamepad highlight, and keyboard focus.
         readonly property bool active: hovered || highlighted
 
         // Dim the app if it's hidden
         opacity: model.hidden ? 0.4 : 1.0
 
-        // 抬起时的位移。Panel 自己也会算一份，但内容层在 background 外面，
-        // 两边必须共用同一个动画值才不会错开。
+        // Share one lift animation value between Panel and the separate content layer
+        // so the two cannot become misaligned.
         property real tileShift: active ? -3 : 0
 
         Behavior on tileShift {
             NumberAnimation { duration: Theme.durFast; easing.type: Theme.easing }
         }
 
-        // FluentWinUI3 给 ItemDelegate 的默认背景是圆角 + hover 高亮块，整块替掉。
-        // background 里只放这块硬卡片本身，别放任何要点的东西 —— 原因见 tileBody。
+        // Replace FluentWinUI3's rounded hover background with this square card.
+        // Interactive content belongs in tileBody, not the background.
         background: Panel {
             lifted: appTile.active
             liftShift: appTile.tileShift
             fill: Theme.ink
             borderColor: appTile.active ? Theme.accent : Theme.line
 
-            // 正在运行 → 左侧酸性绿粗条。整个应用里只有这里和 LIVE 徽标用酸性绿。
+            // Running apps have a lime accent bar, matching the LIVE badge.
             accentBarColor: Theme.acid
             accentBarWidth: model.running ? Theme.accentBarStrong : 0
         }
 
-        // 封面、信息条、徽标、Resume/Quit 按钮都住在 background 外面。
+        // Keep cover art, information, badges, and Resume/Quit controls outside the background.
         //
-        // 一开始它们是 Panel 的子项，结果运行中的游戏上那两个按钮点了没反应：
-        // Control 会把 background 压到 z = -1，而 Qt 的命中测试顺序是
-        // 「z >= 0 的子项 → 控件自己 → z < 0 的子项」，所以 ItemDelegate 自己的
-        // onClicked 永远先把点击吃掉，按钮根本等不到。
+        // Controls inside Panel's background could not receive clicks: Control assigns
+        // background z = -1, and Qt tests nonnegative children, the control itself, then
+        // negative children. ItemDelegate therefore consumed the click before those buttons.
         //
-        // 代价是位移要自己跟：Panel 的「抬起」是把本体往左上挪 3px，这一层必须用
-        // 同一个 tileShift，否则封面会和描边错开。
+        // Follow Panel's three-pixel lift with the same tileShift to align art and border.
         Item {
             id: tileBody
 
-            // 运行时左边让出那条酸性绿粗条的位置
+            // Reserve space for the running-state accent bar on the left.
             readonly property int barInset: model.running ? Theme.accentBarStrong : 0
 
-            x: appTile.tileShift + 1 + barInset   // +1 是别盖住 Panel 那 1px 描边
+            x: appTile.tileShift + 1 + barInset   // Preserve Panel's one-pixel border.
             y: appTile.tileShift + 1
             width: appTile.width - 2 - barInset
             height: appTile.height - 2
@@ -428,7 +421,7 @@ CenteredGridView {
 
                 id: appIcon
 
-                // 封面铺满整块 tile，不再是居中的 200×267 + 顶部 10px 偏移
+                // Fill the tile with cover art instead of centering a fixed-size image.
                 anchors.fill: parent
                 source: model.boxart
                 sourceSize: Qt.size(Math.max(1, Math.ceil(width * requestedDpr)),
@@ -450,9 +443,8 @@ CenteredGridView {
                                  (nameLabel.truncated || (appNameText && appNameText.truncated))
             }
 
-            // 占位封面的大字名。声明在这里（紧跟封面之后）是为了排在下面那层
-            // 运行态蒙版之下 —— 那层蒙版带 visible: !isPlaceholder，所以永远不会
-            // 挡住这段大字名，而 Resume/Quit 按钮仍然画在它上面，和改动前一致。
+            // Place the large placeholder title after the cover but below running-state
+            // controls. The running overlay excludes placeholders, preserving title visibility.
             Loader {
                 id: appNameTextLoader
                 active: appIcon.isPlaceholder
@@ -484,8 +476,8 @@ CenteredGridView {
                 }
             }
 
-            // 底部信息条。以前游戏名只在占位封面时才画出来，有真封面的游戏
-            // 根本读不到名字 —— 这条就是修那个。占位封面仍旧走下面的大字名。
+            // The bottom bar makes names readable on real covers; placeholders retain
+            // their large title instead.
             Rectangle {
                 id: infoBar
 
@@ -544,12 +536,12 @@ CenteredGridView {
                 active: model.running
                 asynchronous: true
 
-                // 别盖住信息条，游戏名在运行时也要能读
+                // Leave the information bar visible while the app is running.
                 anchors.fill: parent
                 anchors.bottomMargin: infoBar.visible ? infoBar.height : 0
 
                 sourceComponent: Item {
-                    // 压暗封面让按钮读得出来。占位封面本来就是一块平灰，不用压。
+                    // Dim cover art for readable buttons; flat placeholder art needs no dimming.
                     Rectangle {
                         anchors.fill: parent
                         color: Qt.rgba(Theme.ink.r, Theme.ink.g, Theme.ink.b, 0.55)
@@ -559,7 +551,7 @@ CenteredGridView {
                     Row {
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.verticalCenter: parent.verticalCenter
-                        // 占位封面的大字名占满整块，按钮往上挪开
+                        // Move buttons above the large placeholder title.
                         anchors.verticalCenterOffset: appIcon.isPlaceholder ? -70 : 0
                         spacing: Theme.spaceMd
 
@@ -608,12 +600,10 @@ CenteredGridView {
                 }
             }
 
-            // LIVE / HIDDEN 徽标声明在最后，也就是画在最上层。运行态蒙版把封面
-            // 压到 55%，徽标要是排在它下面就会被一起压暗（实测酸性绿被压成
-            // (49,55,63)）—— 状态标记必须是整块 tile 里最亮的东西。
+            // Declare LIVE/HIDDEN badges last so the running overlay cannot dim them.
+            // Status markers should remain the brightest part of the tile.
             //
-            // 光晕垫在徽标之前才在下层：QtGraphicalEffects 不一定可用，直接用一圈
-            // 半透明酸性绿顶替参考站的 box-shadow: 0 0 12px。
+            // Place the translucent lime glow below the badge without requiring QtGraphicalEffects.
             Rectangle {
                 anchors.fill: liveBadge
                 anchors.margins: -3
@@ -795,7 +785,7 @@ CenteredGridView {
         }
     }
 
-    // 空状态：Manrope 800 大标题 + DM Mono 暗色副行
+    // Empty state: large Manrope 800 heading and dim DM Mono supporting text.
     Column {
         anchors.centerIn: parent
         width: Math.min(parent.width - Theme.spaceXl * 2, 520)
@@ -831,8 +821,8 @@ CenteredGridView {
         }
     }
 
-    // 连接 IP 选择框。和 PcView 用的是同一个组件（那边是对某台主机切地址，
-    // 这边是在应用列表里切当前主机的地址），差别只有提示语和「自动」这一项。
+    // Share PcView's address selector; only the prompt and Automatic option differ
+    // when selecting an address for the current host from its app list.
     SelectAddressDialog {
         id: ipDialog
 
@@ -883,15 +873,13 @@ CenteredGridView {
 
     ScrollBar.vertical: ScrollBar {}
 
-    // 壁纸和它的遮罩都是 GridView contentItem 的兄弟节点，和 delegate 同一个父级。
-    // z 相同的话按声明顺序绘制，而这两块声明在 delegate 之后 —— 所以必须给负 z，
-    // 否则遮罩会盖在所有 tile 上面（封面会被压成一片灰，实测峰值只剩 48%）。
+    // Wallpaper and dimming are siblings of the grid delegates. Give them negative z
+    // because later declarations at equal z would cover and darken every tile.
     Image {
         id: backgroundImage
         anchors.fill: parent
         source: getBackgroundSource()
-        // 壁纸压得比以前更暗（0.3 → 0.18）：新风格里 tile 要读起来像一块硬物件，
-        // 底图越安静，方角 + 硬投影的层次就越清楚。
+        // A darker wallpaper (0.18 instead of 0.3) makes square cards and hard shadows clearer.
         opacity: 0.18
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
@@ -907,7 +895,7 @@ CenteredGridView {
 
 
     function getBackgroundSource() {
-        // 优先使用正在运行的应用的封面
+        // Prefer the running application's cover art.
         let runningAppId = appModel.getRunningAppId()
         if (runningAppId !== 0) {
             for (let i = 0; i < appModel.rowCount(); i++) {
@@ -920,7 +908,7 @@ CenteredGridView {
             }
         }
 
-        // 没有运行应用时使用第一个应用的封面
+        // Otherwise use the first application's cover art.
         if (appModel.rowCount() > 0) {
             let firstAppIndex = appModel.index(0, 0)
             let boxArt = appModel.data(firstAppIndex, boxArtRole)
@@ -930,11 +918,11 @@ CenteredGridView {
         return "qrc:/res/gura.png"
     }
 
-    // 修改数据变化监听
+    // Observe model changes.
     Connections {
         target: appModel
         function onDataChanged() {
-            // 使用Qt.callLater防止重复更新
+            // Coalesce repeated updates with Qt.callLater.
             Qt.callLater(function() {
                 let newSource = getBackgroundSource()
                 if (backgroundImage.source !== newSource) {

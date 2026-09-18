@@ -2,8 +2,8 @@ import QtQuick 2.9
 import "."
 import "../theme"
 
-// 普通叙述与 HUD 芯片在同一个 Flow 中排版。长正文可以占满一行换行，
-// 技术关键词保持独立芯片，窄窗口下自然移动到下一行。
+// Lay out prose and technical tags in one Flow. Prose wraps across full rows,
+// while each keyword remains an independent tag that moves to the next row as needed.
 Flow {
     id: phrase
 

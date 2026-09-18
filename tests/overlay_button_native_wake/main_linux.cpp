@@ -46,11 +46,10 @@ void drainSemaphore(QSemaphore& semaphore)
     }
 }
 
-// X11 监视器的挂载/重挂载都经 SDL owner loop 异步完成:settle 后的 drain 可能
-// 先吃掉挂载本身产生的唤醒,此时单次合成事件会落进尚未监听的窗口。有限次
-// 重试"发事件-等唤醒",挂载完成后第一次事件即成功。
-// 只用于幂等的指针运动:点击有副作用(超时的点击可能仍在队列,settle 处理后
-// 计数 +1,重发会打破精确计数断言),点击一律单次发送 + 长等待。
+// X11 monitor attachment is asynchronous through SDL's owner loop. A drain may
+// consume the attachment wake before the monitor is ready; retry idempotent pointer
+// movement a bounded number of times. Never retry clicks: an earlier queued click
+// could still execute and break exact-count assertions. Send clicks once and wait longer.
 template <typename Fire>
 bool pokeUntilWake(OverlayMenuButton& button, Fire fire, QSemaphore& wakeSemaphore)
 {

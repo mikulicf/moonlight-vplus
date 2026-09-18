@@ -3,8 +3,7 @@ import QtQuick.Controls
 import QtQuick.Window 2.2
 import "../theme"
 
-// 内容滚动区。搬运了旧 SettingsView 的焦点自动滚动逻辑，
-// 手柄按 Tab 走到屏幕外的控件时把它滚进视野。
+// Scroll focused controls into view during keyboard/gamepad navigation.
 Flickable {
     id: area
 
@@ -41,8 +40,7 @@ Flickable {
         return false
     }
 
-    // 供页面内的快捷入口直接定位到内容末尾。目标位置由滚动区统一计算，
-    // 页面组件不需要知道外层 Flickable 的可滚动范围。
+    // Expose scrolling to the end without requiring pages to know Flickable's range.
     function scrollToEnd() {
         autoScrollAnimation.stop()
         autoScrollAnimation.from = contentY

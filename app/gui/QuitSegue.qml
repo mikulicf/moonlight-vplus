@@ -11,7 +11,7 @@ Item {
     property var quitRunningAppFn
     property Session nextSession : null
     property string nextAppName : ""
-    // 退出旧游戏后要接着启动的那个游戏的封面，转交给加载页当背景
+    // Pass the next game's cover to the loading page after quitting the current game.
     property string nextBoxArtUrl : ""
 
     property string stageText : qsTr("Quitting %1...").arg(appName)
@@ -60,7 +60,7 @@ Item {
         ComputerManager.quitAppCompleted.disconnect(quitAppCompleted)
     }
 
-    // 和加载页同一套：Manrope 800 大字阶段文字 + 一条来回扫的酸性绿实心条，不用转圈
+    // Match the loading page: Manrope 800 stage text and a sweeping lime progress bar.
     Column {
         anchors.centerIn: parent
         width: Math.min(parent.width - Theme.spaceXl * 2, 620)
@@ -76,7 +76,7 @@ Item {
             font.pointSize: 24
             font.weight: Font.ExtraBold
             font.letterSpacing: Theme.trackingTight(24)
-            // 和加载页一致：咬着读条的左基线，不居中
+            // Align to the progress bar's left edge, matching the loading page.
             horizontalAlignment: Text.AlignLeft
             wrapMode: Text.Wrap
         }

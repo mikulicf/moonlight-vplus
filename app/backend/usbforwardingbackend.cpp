@@ -4,7 +4,7 @@
 #include "usbforwardinglocalserver.h"
 
 #ifdef Q_OS_DARWIN
-// 仅 macOS 的绑定偏好持久化用到；不无条件引入，让 tests/ 无需 Qt Qml。
+// Only macOS binding preferences need this; avoid requiring Qt Qml in standalone tests.
 #include "settings/streamingpreferences.h"
 #endif
 
@@ -23,7 +23,7 @@
 namespace {
 
 #ifndef Q_OS_DARWIN
-// 从 Windows 实例 ID（USB\VID_054C&PID_0CE6\...）解析出 "054c:0ce6"。
+// Parse a Windows instance ID such as USB\VID_054C&PID_0CE6\... into 054c:0ce6.
 QString vidPidFromInstanceId(const QString &instanceId)
 {
     static const QRegularExpression vidRe(QStringLiteral("VID_([0-9A-Fa-f]{4})"));
@@ -37,7 +37,7 @@ QString vidPidFromInstanceId(const QString &instanceId)
         + pidMatch.captured(1).toLower();
 }
 
-// "1-2" 这类真实 busid 才可绑定；"IncompatibleHub" 与空串都不可。
+// Only real bus IDs such as 1-2 can be bound; empty IDs and IncompatibleHub cannot.
 bool isRealBusId(const QString &busId)
 {
     static const QRegularExpression realRe(
@@ -46,8 +46,8 @@ bool isRealBusId(const QString &busId)
 }
 #endif
 
-// macOS helper 的 busid 是 libusb 拓扑路径："1-2"，经 hub 时 "1-2.3"。
-// 必须与 usbipdcpp 的 find_by_busid 生成算法一致（bus + "-" + 端口链 "." 连接）。
+// macOS helper bus IDs use libusb topology paths: 1-2, or 1-2.3 through a hub.
+// Match usbipdcpp's find_by_busid algorithm: bus + '-' + dot-separated port chain.
 bool isMacBusId(const QString &busId)
 {
     static const QRegularExpression macRe(
@@ -106,9 +106,9 @@ QVariantList UsbForwardingBackend::parseHelperDevices(const QByteArray &helperJs
         device.insert(QStringLiteral("instanceId"),
                       o.value(QLatin1String("serial")).toString());
         device.insert(QStringLiteral("vidPid"), vidPid);
-        // isBound 恒 false，由 refreshFromHelper() 按用户偏好叠加。
+        // refreshFromHelper() overlays user binding preferences on the initial false value.
         device.insert(QStringLiteral("isBound"), false);
-        // 出现在枚举输出里即已连接。
+        // A device present in the enumeration output is connected.
         device.insert(QStringLiteral("isConnected"), true);
         device.insert(QStringLiteral("isAttached"), false);
         device.insert(QStringLiteral("isSupported"), isMacBusId(busId) && claimable);
@@ -254,7 +254,7 @@ void UsbForwardingBackend::refreshFromHelper()
     setError(QString());
 
     QProcess *probe = new QProcess(this);
-    /* 与 Windows 分支同理：FailedToStart 只发 errorOccurred 不发 finished。 */
+    /* Like Windows, FailedToStart emits errorOccurred without finished. */
     connect(probe, &QProcess::errorOccurred, this,
             [this, probe](QProcess::ProcessError processError) {
         if (processError != QProcess::FailedToStart) {
@@ -315,8 +315,8 @@ void UsbForwardingBackend::bind(const QString &busId)
         return;
     }
 #ifdef Q_OS_DARWIN
-    // macOS 上绑定只是记偏好：serve 进程由 Session 在转发时按需拉起，
-    // 因此无需提权，立即生效（正在转发的会话不受影响，下次选择时生效）。
+    // macOS binding saves preferences without elevation. Session launches serve on demand.
+    // Changes apply on the next selection and do not disturb an active forwarding session.
     StreamingPreferences *prefs = StreamingPreferences::get();
     QStringList bound = prefs->usbForwardingBoundDevices();
     if (!bound.contains(busId)) {
@@ -358,7 +358,7 @@ void UsbForwardingBackend::unbind(const QString &busId, const QString &persisted
         return;
     }
 #ifdef Q_OS_DARWIN
-    // macOS：从偏好列表移除即可；persistedGuid 是 Windows 概念，忽略。
+    // macOS only removes the preference entry; persistedGuid is Windows-specific.
     StreamingPreferences *prefs = StreamingPreferences::get();
     QStringList bound = prefs->usbForwardingBoundDevices();
     if (bound.removeAll(busId) > 0) {

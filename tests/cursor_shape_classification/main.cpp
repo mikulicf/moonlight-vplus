@@ -6,8 +6,8 @@
 
 namespace {
 
-// 一张 BGRA8888 画布，只用来搭合成光标。所有不透明像素都画成白色——分类器只看
-// alpha，颜色不参与判断。
+// BGRA8888 canvas for synthetic cursors. Opaque pixels are white because
+// classification depends on alpha, not color.
 class Canvas
 {
 public:
@@ -47,7 +47,7 @@ private:
     QByteArray m_data;
 };
 
-// Windows 标准箭头的骨架：热点在左上角，三角头部自上而下变宽，接着一条偏右的尾巴
+// Standard Windows arrow: top-left hotspot, widening triangular head, and rightward tail.
 Canvas makeArrow(int s)
 {
     Canvas canvas(32 * s, 32 * s);
@@ -71,11 +71,11 @@ Canvas makeArrow(int s)
     return canvas;
 }
 
-// I 型：上下两道齐平的衬线夹一条细竖杆。
+// I-beam: a thin vertical stem between flat top and bottom serifs.
 //
-// 比例照实测的真货来：Sunshine 推的 Windows 64×64 I 型，不透明包围盒 21×36、
-// fill≈0.444、topWidthRatio≈4.12。衬线相对整体高度比直觉宽得多（比值只有 1.71），
-// 早先按一个瘦长的 7×20 合成体来定阈值，真货全被挡在外面了。
+// Match a measured Windows 64x64 I-beam: opaque bounds 21x36, fill about 0.444,
+// topWidthRatio about 4.12, and tallness 1.71. An earlier 7x20 synthetic shape
+// produced thresholds that rejected real cursors with wider serifs.
 Canvas makeIBeam(int s)
 {
     Canvas canvas(64 * s, 64 * s);
@@ -98,7 +98,7 @@ Canvas makeIBeam(int s)
     return canvas;
 }
 
-// 上下双箭头：两端是尖的，最宽处在箭头根部，中间一条细杆
+// Vertical resize arrow: pointed ends, widest arrowhead bases, and a thin stem.
 Canvas makeSizeNS(int s)
 {
     Canvas canvas(32 * s, 32 * s);
@@ -114,7 +114,7 @@ Canvas makeSizeNS(int s)
         if (d < arrowRows) {
             width = stemWidth +
                     (boxWidth - stemWidth) * d / (arrowRows - 1);
-            // 保持奇数宽度，才能在 boxWidth 里精确居中
+            // Keep an odd width for exact centering within boxWidth.
             if ((width % 2) != (boxWidth % 2)) {
                 width++;
             }
@@ -125,7 +125,7 @@ Canvas makeSizeNS(int s)
     return canvas;
 }
 
-// 左右双箭头 = 上下双箭头转置
+// Horizontal resize arrow is the transpose of the vertical arrow.
 Canvas makeSizeWE(int s)
 {
     const Canvas source = makeSizeNS(s);
@@ -144,7 +144,7 @@ Canvas makeSizeWE(int s)
     return canvas;
 }
 
-// 沿主对角线（左上-右下）的双箭头。按主对角转置对称地构造，两端各带一个 L 形箭头。
+// Main-diagonal resize arrow with transpose symmetry and L-shaped ends.
 Canvas makeSizeNWSE(int s, bool mirrored)
 {
     const int extent = 16 * s;
@@ -177,7 +177,7 @@ Canvas makeSizeNWSE(int s, bool mirrored)
     return canvas;
 }
 
-// 手型：一根食指立在拳头上，指尖偏左于整体中线
+// Hand: index finger above a fist, fingertip slightly left of the overall center.
 Canvas makeHand(int s)
 {
     Canvas canvas(32 * s, 32 * s);
@@ -194,7 +194,7 @@ Canvas makeHand(int s)
             canvas.plotRow(y, fingerLeft, fingerWidth);
         }
         else if (y < fingerRows + flareRows) {
-            // 手掌张开的过渡段
+            // Widening transition into the palm.
             const int step = y - fingerRows + 1;
             const int width = fingerWidth +
                               (boxWidth - fingerWidth) * step / (flareRows + 1);
@@ -208,17 +208,16 @@ Canvas makeHand(int s)
     return canvas;
 }
 
-// 箭头 + 右上角一个转圈（IDC_APPSTARTING）。
+// Arrow with an upper-right busy ring (IDC_APPSTARTING).
 //
-// 比例照实测：Windows 64×64 这只的包围盒是 44×53，热点归一化到 (0.00, 0.29)。热点
-// 的纵向位置不是 0，是因为那个圈比箭头尖还高——包围盒的顶边是圈的顶，箭头尖在它
-// 下面约 15 像素处。corr≈-0.54 也来自这个布局：质量分两坨，箭头在左侧竖着铺，圈在
-// 右上角。
+// Match Windows 64x64 bounds 44x53 and hotspot (0.00,0.29). The ring sets the
+// top edge about 15 pixels above the arrow tip. Separate left-arrow and upper-right
+// ring masses produce correlation around -0.54.
 Canvas makeAppStarting(int s, int& hotspotX, int& hotspotY)
 {
     Canvas canvas(64 * s, 64 * s);
 
-    // 右上角的圈，顶边就是整体包围盒的顶边
+    // The upper-right ring defines the complete bounding box's top edge.
     const int cx = 30 * s;
     const int cy = 13 * s;
     const int outer = 13 * s;
@@ -234,7 +233,7 @@ Canvas makeAppStarting(int s, int& hotspotX, int& hotspotY)
         }
     }
 
-    // 左边那只箭头，比普通箭头粗一圈（64 像素档的实际观感），尖端压在圈的下方
+    // Slightly thicker 64-pixel arrow on the left, with its tip below the ring's top.
     const int arrowTop = 15 * s;
     const int totalRows = 38 * s;
     const int headRows = 24 * s;
@@ -256,10 +255,10 @@ Canvas makeAppStarting(int s, int& hotspotX, int& hotspotY)
     return canvas;
 }
 
-// 等待光标：一个中空的圈。
+// Wait cursor: a hollow ring.
 //
-// 比例照实测：Windows 64×64 这只的包围盒是 40×40、fill≈0.570，反推内圈半径约为外圈
-// 的 0.52。
+// Measured Windows 64x64 bounds are 40x40 with fill about 0.570,
+// implying an inner radius about 0.52 of the outer radius.
 Canvas makeWait(int s)
 {
     Canvas canvas(64 * s, 64 * s);
@@ -283,8 +282,8 @@ Canvas makeWait(int s)
     return canvas;
 }
 
-// 四向箭头（IDC_SIZEALL）和十字（IDC_CROSS）：跟等待光标同样是近方形 + 四重对称 +
-// 热点居中，故意不认。它们的臂在中心交汇，中心是实的，正是靠这一点跟圈分开的。
+// Four-way arrows and crosses deliberately remain unrecognized. Like wait cursors,
+// they are square, symmetric, and centered, but their solid center distinguishes them.
 Canvas makeSizeAll(int s)
 {
     Canvas canvas(64 * s, 64 * s);
@@ -300,7 +299,7 @@ Canvas makeSizeAll(int s)
     for (int y = 0; y < size; y++) {
         canvas.plotRow(y, mid - arm / 2, arm);
     }
-    // 四个箭头头部
+    // Four arrowheads.
     for (int k = 0; k < head / 2; k++) {
         canvas.plotRow(k, mid - k, 2 * k + 1);
         canvas.plotRow(size - 1 - k, mid - k, 2 * k + 1);
@@ -331,7 +330,7 @@ Canvas makeCrosshair(int s)
     return canvas;
 }
 
-// 一块确定性的噪声斑，代表游戏自绘光标：必须落到 Unknown
+// Deterministic noise represents a custom game cursor and must remain Unknown.
 Canvas makeNoiseBlob()
 {
     Canvas canvas(32, 32);
@@ -406,7 +405,7 @@ int main(int argc, char* argv[])
 
     bool ok = true;
 
-    // 同一形状的 1x 与 2x 都要认出来——主机的 DPI 缩放会在这几档之间变
+    // Recognize the same shape at 1x and 2x to cover host DPI changes.
     for (int s = 1; s <= 2; s++) {
         const QString suffix = QStringLiteral(" @%1x").arg(s);
 
@@ -443,8 +442,8 @@ int main(int argc, char* argv[])
                           NativeCursorShape::SizeNESW);
     }
 
-    // 不认识的一律回退位图
-    // 四向箭头和十字是故意不认的：它们跟等待光标同属"近方形 + 四重对称 + 热点居中"
+    // Unknown shapes use bitmap fallback. Crosses/four-way arrows deliberately
+    // remain unknown despite sharing square, symmetric, centered geometry with rings.
     ok &= expectShape(out, QStringLiteral("size-all"),
                       makeSizeAll(1), 16, 16, NativeCursorShape::Unknown);
     ok &= expectShape(out, QStringLiteral("crosshair"),
@@ -454,12 +453,12 @@ int main(int argc, char* argv[])
     ok &= expectShape(out, QStringLiteral("solid block"),
                       makeSolidBlock(), 16, 16, NativeCursorShape::Unknown);
 
-    // 全透明（主机用来表示光标不可见）不能被当成任何形状
+    // Fully transparent hidden cursors must not match any shape.
     const Canvas blank(32, 32);
     ok &= expectShape(out, QStringLiteral("fully transparent"),
                       blank, 0, 0, NativeCursorShape::Unknown);
 
-    // 输入长度不符时必须安全地判为不认识
+    // Incorrect input length must safely return Unknown.
     if (classifyCursorShape(32, 32, 0, 0, QByteArray(16, '\0')) !=
         NativeCursorShape::Unknown) {
         out << "FAIL: short pixel buffer was not rejected\n";

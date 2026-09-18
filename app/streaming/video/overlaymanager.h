@@ -15,10 +15,11 @@ enum OverlayType {
     OverlayMax
 };
 
-enum TextAlignment {
-    AlignTop,        // 顶部对齐
-    AlignCenter,     // 居中对齐
-    AlignBottom      // 底部对齐（默认）
+enum TextAlignment
+{
+    AlignTop,    // Top alignment.
+    AlignCenter, // Center alignment.
+    AlignBottom  // Bottom/baseline alignment (default).
 };
 
 class IOverlayRenderer
@@ -52,13 +53,13 @@ public:
 private:
     void notifyOverlayUpdated(OverlayType type);
 
-    // 文本格式解析相关方法
+    // Text-format parsing helpers.
     struct TextSegment {
         std::string text;
         bool isBold;
         bool isItalic;
-        int fontSize;        // 字体大小，-1表示使用默认大小
-        bool isRelativeSize; // 是否为相对大小调整
+        int fontSize;        // -1 selects the default size.
+        bool isRelativeSize; // Whether this is a relative size adjustment.
     };
 
     std::vector<TextSegment> parseFormattedText(const char* text);
@@ -77,12 +78,12 @@ private:
         SDL_Color color;
         SDL_Color bgcolor;
         char text[1024];
-        TextAlignment textAlignment;  // 文本对齐方式
+        TextAlignment textAlignment; // Text alignment.
 
-        TTF_Font* font;          // 普通字体
-        TTF_Font* fontBold;      // 粗体字体
-        TTF_Font* fontItalic;    // 斜体字体
-        TTF_Font* fontBoldItalic; // 粗体斜体字体
+        TTF_Font* font;           // Regular.
+        TTF_Font* fontBold;       // Bold.
+        TTF_Font* fontItalic;     // Italic.
+        TTF_Font* fontBoldItalic; // Bold italic.
         SDL_Surface* surface;
     } m_Overlays[OverlayMax];
     IOverlayRenderer* m_Renderer;

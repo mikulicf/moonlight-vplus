@@ -2,11 +2,11 @@ import QtQuick 2.9
 import QtQuick.Controls
 import "."
 
-// 方角滑条：4px 方槽 + 竖直方块把手，把手带一小截硬投影。
+// Square slider: four-pixel track and rectangular handle with a short hard shadow.
 Slider {
     id: control
 
-    // 关掉 FluentWinUI3 那圈白色圆角双环，焦点改用把手外面的方角 FocusRing。
+    // Replace FluentWinUI3's rounded focus rings with a square ring around the handle.
     readonly property Item __focusFrameTarget: null
 
     background: Rectangle {
@@ -53,8 +53,8 @@ Slider {
             opacity: control.enabled ? 1.0 : 0.45
         }
 
-        // 把手本身就是 accent 实心块，描边只用来把它从槽里剥出来，
-        // 表达不了焦点，所以焦点走外挂环（和 HardCheckBox / HardSwitch 一致）。
+        // The solid accent handle's border separates it from the track. Use an external
+        // focus ring, matching HardCheckBox and HardSwitch.
         FocusRing {
             visible: control.visualFocus
         }

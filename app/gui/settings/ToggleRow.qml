@@ -3,8 +3,8 @@ import QtQuick.Controls
 import "."
 import "../theme"
 
-// 开关行。checked 不做双向绑定，由使用方在 onToggled 里写回偏好设置，
-// 避免初始化阶段的写回把已保存的值覆盖掉。
+// The caller writes preferences in onToggled. Avoid two-way checked binding that
+// could overwrite saved values while initialization restores them.
 SettingsRow {
     id: toggleRow
 
@@ -17,9 +17,8 @@ SettingsRow {
     HardSwitch {
         id: control
         hoverEnabled: true
-        // 只在用户操作时上报。checked 是别名，从偏好设置恢复初值也会改动它，
-        // 用 onCheckedChanged 的话初始化阶段就会触发一次写回 —— 正是上面注释里
-        // 说要避免的那件事。Switch 自带的 toggled() 只由用户交互触发。
+        // Report only user interaction. Restoring checked also emits checkedChanged,
+        // whereas Switch.toggled() excludes initialization and programmatic changes.
         onToggled: toggleRow.toggled(checked)
 
         ToolTip {

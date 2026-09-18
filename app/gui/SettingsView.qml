@@ -9,28 +9,25 @@ import SystemProperties 1.0
 import "settings"
 import "theme"
 
-// 设置页外壳：左侧分类 rail + 右侧卡片内容。
-// 「基本设置」「显示」使用独立页面；其余 6 组保留在 LegacySettingsPage.qml
-// 中以维持翻译上下文，但内部也已经迁移到卡片和设置行。
-// 根用 FocusScope 而不是 Item：工具栏的 Keys.onDownPressed 走的是
-// stackView.currentItem.forceActiveFocus()，落在普通 Item 上会停在一个看不见的
-// 死点上（PcView / AppView 是 GridView + activeFocusOnTab，所以没这问题）。
-// FocusScope 会把焦点转交给内部真正持焦的控件。
+// Settings shell: category rail on the left and card content on the right.
+// Basic and Display have separate pages; six other groups retain LegacySettingsPage's
+// translation context while using the same card/row components. Use FocusScope so
+// toolbar forceActiveFocus() forwards to a real control instead of an invisible Item.
 FocusScope {
     id: settingsPage
-    // 这一页自带壁纸，main.qml 不用再垫一层
+    // This page provides its own wallpaper; main.qml must not add another layer.
     readonly property bool usesOwnBackground: true
     objectName: qsTr("Settings")
 
     signal languageChanged()
 
-    // 窄窗口时 rail 折叠成顶部横向 tab 条
+    // Collapse the rail to horizontal tabs in narrow windows.
     readonly property bool compact: width < Theme.compactBreakpoint
 
     property string category: "basic"
 
-    // 图标取自 Microsoft Fluent UI System Icons（MIT），和 FluentWinUI3 是同一套设计语言。
-    // 之前用 emoji，各平台字体不同，渲染出来大小、粗细、配色都对不齐。
+    // Use MIT-licensed Microsoft Fluent UI System Icons for consistent cross-platform
+    // size, weight, and color instead of platform-dependent emoji glyphs.
     readonly property var rawCategories: [
         { key: "basic",    icon: "qrc:/res/fluent/cat-basic.svg",    title: qsTr("Basic Settings") },
         { key: "display",  icon: "qrc:/res/fluent/cat-display.svg",  title: qsTr("Display Settings") },
@@ -41,12 +38,12 @@ FocusScope {
         { key: "peripherals", icon: "qrc:/res/fluent/cat-peripherals.svg", title: qsTr("Peripherals Settings") },
         { key: "advanced", icon: "qrc:/res/fluent/cat-advanced.svg", title: qsTr("Advanced Settings") },
         { key: "ui",       icon: "qrc:/res/fluent/cat-ui.svg",       title: qsTr("Software Settings") },
-        { key: "ecosystem",icon: "qrc:/res/fluent/cat-ecosystem.svg",title: qsTr("AlkaidLab Ecosystem") },
+        { key: "ecosystem",icon: "qrc:/res/fluent/cat-ecosystem.svg",title: qsTr("Hosts and Clients") },
         { key: "about",    icon: "qrc:/res/fluent/cat-about.svg",    title: qsTr("About") }
     ]
 
-    // USB 设备转发只在有本地 USB/IP 后端的平台提供（Windows/macOS）；
-    // 没有的平台连分类一起隐藏，避免出现空页。
+    // Show USB forwarding only where a local USB/IP backend exists (Windows/macOS).
+    // Hide the category entirely elsewhere to avoid an empty page.
     readonly property var categories: rawCategories.filter(
         function(c) {
             return c.key !== "peripherals" || SystemProperties.usbForwardingAvailable
@@ -57,18 +54,17 @@ FocusScope {
         // It is required to shift focus between controls on the settings page.
         SdlGamepadKeyNavigation.setUiNavMode(true)
 
-        // 手柄进来时把焦点放在分类栏的当前分类上，而不是内容区第一个控件。
+        // Start gamepad focus on the selected category rather than the first content control.
         //
-        // 以前是直接点基本设置页的分辨率下拉，于是用户进设置的第一下左右输入就把
-        // 分辨率改了（issue #144）。落在分类栏上就没这个问题：分类栏不吃左右键，
-        // 而且 category 是跨次保留的，从分类栏出发永远是可见、可用的那一项。
+        // Starting on the resolution dropdown let the first horizontal input change its
+        // value (issue #144). The retained category provides a visible, safe starting point.
         if (SdlGamepadKeyNavigation.getConnectedGamepads() > 0) {
             rail.focusCurrent()
         }
     }
 
-    // 焦点在内容区时，B / Esc 先退回分类栏；已经在分类栏了才放行给 main.qml
-    // 去弹出整个设置页。之前不分级，手柄用户在内容区随手一个 B 就整页退出了。
+    // B/Escape first returns from content to the rail. Only from the rail does it
+    // propagate to main.qml and leave settings, avoiding accidental whole-page exits.
     Keys.onEscapePressed: function(event) {
         event.accepted = !rail.railFocused
         if (event.accepted) {
@@ -76,12 +72,10 @@ FocusScope {
         }
     }
 
-    // 把焦点交给内容区的第一个可聚焦控件。
+    // Focus the first available control in the content area.
     //
-    // 不直接引用某个页面的首个控件：那只对基本设置页有效，其余六组还在
-    // LegacySettingsPage 里，而且随分类切换。scrollArea 在声明顺序上排在分类栏
-    // 之后，往后走一格 Tab 就是它内部第一个可聚焦控件 —— 焦点链本身会跳过
-    // 不可见的分类。
+    // Follow the focus chain rather than naming a page-specific first control.
+    // scrollArea follows the rail in declaration order, and Tab skips hidden categories.
     function focusContent() {
         var first = scrollArea.nextItemInFocusChain(true)
         if (first) {
@@ -102,20 +96,19 @@ FocusScope {
         StreamingPreferences.save()
     }
 
-    // 焦点落到 FocusScope 壳自己身上时（工具栏按向下、或 StackView 切页回来），
-    // 转交给分类栏。停在壳上是个看不见的死点，用户得多按一次才有反应。
+    // Forward focus from the shell to the category rail when arriving from the toolbar
+    // or a StackView transition, avoiding an invisible focus stop.
     onActiveFocusChanged: {
         if (activeFocus && Window.window && Window.window.activeFocusItem === settingsPage) {
             rail.focusCurrent()
         }
     }
 
-    // 手柄 LB/RB 映射成 PageUp/PageDown，用来切分类
+    // Gamepad LB/RB map to PageUp/PageDown for category switching.
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_PageUp) {
             rail.step(-1)
-            // 切完分类要把焦点收回分类栏：原来持焦的控件已经随着旧分类隐藏了，
-            // 焦点会凭空消失，手柄看起来就像失灵。
+            // Restore rail focus after switching; the old content control is now hidden.
             rail.focusCurrent()
             event.accepted = true
         }
@@ -151,7 +144,7 @@ FocusScope {
 
         anchors {
             fill: parent
-            // 让出顶部工具栏（56）+ 一格间距
+            // Reserve the 56-pixel toolbar plus one spacing unit.
             topMargin: 72
             leftMargin: Theme.spaceLg
             rightMargin: Theme.spaceLg
@@ -168,8 +161,8 @@ FocusScope {
             width: settingsPage.compact ? body.width : Theme.railWidth
             height: settingsPage.compact ? 52 : body.height
 
-            // 分类栏底板。方角 + 1px 描边，不用硬投影：它贴着窗口左边，
-            // 投影只会在右侧和内容区挤在一起。
+            // Square category backing with a one-pixel border. Omit a shadow because
+            // it would crowd the content beside the window's left edge.
             radius: 0
             color: Theme.surfaceLayer
             border.width: 1
@@ -221,7 +214,7 @@ FocusScope {
 
             LegacySettingsPage {
                 id: legacyPage
-                // 已迁移的新页面都在上面按顺序堆着，隐藏时高度为 0，所以这里累加即可
+                // Hidden pages have zero height, so add the preceding page heights.
                 y: basicPage.height + displayPage.height
                 width: parent.width
                 category: settingsPage.category
@@ -264,7 +257,7 @@ FocusScope {
     }
 
     Component.onCompleted: {
-        // 语言切换需要重建若干下拉的模型
+        // Rebuild dropdown models after changing the language.
         settingsPage.languageChanged.connect(basicPage.languageChanged)
         settingsPage.languageChanged.connect(displayPage.languageChanged)
     }

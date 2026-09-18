@@ -367,7 +367,7 @@ HEADERS += \
 !config_SL:macx: SOURCES += streaming/macpermissions.mm
 !config_SL:!macx: SOURCES += streaming/macpermissions_stub.cpp
 
-# 把红绿灯沉到我们自己那条 bar 的中线上，顺带让 AppKit 的标题栏拖动区覆盖整条 bar
+# Center the macOS window controls in our toolbar and extend AppKit's drag region across it.
 macx {
     HEADERS += \
         gui/macwindowchrome.h \

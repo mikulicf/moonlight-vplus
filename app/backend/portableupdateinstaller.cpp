@@ -33,8 +33,8 @@ bool PortableUpdateInstaller::supportsInAppUpdate() const
     return isPortableInstall() &&
             !getPortableUpdaterExecutable().isEmpty();
 #elif defined(Q_OS_DARWIN)
-    // 条件就两个：从 .app 里运行，而且那个 bundle 所在的目录可写。装在 root 拥有的
-    // 目录里、或者直接从 DMG 的只读卷上跑的时候退回浏览器下载。
+    // In-app updates require an .app bundle in a writable parent directory.
+    // Fall back to browser downloads for root-owned locations or read-only DMG volumes.
     QString errorMessage;
     return isBundleInstall() &&
             !getPortableUpdaterExecutable().isEmpty() &&
@@ -159,7 +159,7 @@ bool PortableUpdateInstaller::isBundleInstall() const
 QString PortableUpdateInstaller::getInstalledBundlePath() const
 {
 #if defined(Q_OS_DARWIN)
-    // 可执行文件在 Moonlight.app/Contents/MacOS/Moonlight，往上两级就是 bundle 本身
+    // The executable is Moonlight.app/Contents/MacOS/Moonlight; ascend to the bundle.
     QDir dir(QCoreApplication::applicationDirPath());
     if (!dir.cdUp() || !dir.cdUp()) {
         return QString();
@@ -193,12 +193,12 @@ QString PortableUpdateInstaller::getUpdateArchiveName() const
 QString PortableUpdateInstaller::getUpdateStorageProbePath() const
 {
 #if defined(Q_OS_DARWIN)
-    // 工作目录放在已安装 bundle 的旁边，不放缓存目录。
+    // Place the staging directory beside the installed bundle, not in the cache.
     //
-    // 缓存目录通常和 /Applications 不在同一个卷上，那样两次 mv（备份、换新）都会退化
-    // 成 200MB 级的递归复制：慢，而且中途被打断会在目标位置留下半个 bundle。放在同一个
-    // 卷上，两次 mv 都是原子 rename。父目录的可写性 ensureWritableInstallDir() 已经
-    // 确认过，磁盘空间检查也就自然落在真正要写入的那个卷上。
+    // Cache and /Applications may occupy different volumes, turning backup/replacement
+    // moves into large recursive copies that can leave partial bundles if interrupted.
+    // Same-volume moves are atomic renames. ensureWritableInstallDir() checks the parent,
+    // and the space check therefore measures the actual destination volume.
     QString bundlePath = getInstalledBundlePath();
     if (!bundlePath.isEmpty()) {
         return QFileInfo(bundlePath).absolutePath();
@@ -246,8 +246,8 @@ bool PortableUpdateInstaller::ensureWritableInstallDir(QString& errorMessage) co
         return false;
     }
 
-    // 换 bundle 是在它的父目录里做 mv，所以要探的是父目录的写权限，
-    // 不是 bundle 自己的。
+    // Replacing a bundle moves entries in its parent directory, so check the parent's
+    // write permission rather than the bundle's own permission.
     QFileInfo bundleInfo(bundlePath);
     QTemporaryFile probeFile(QDir(bundleInfo.absolutePath())
                              .filePath(QStringLiteral(".MoonlightUpdateWriteProbe-XXXXXX")));
@@ -270,7 +270,7 @@ bool PortableUpdateInstaller::ensureWritableInstallDir(QString& errorMessage) co
 QString PortableUpdateInstaller::createPortableUpdateWorkspace() const
 {
 #if defined(Q_OS_DARWIN)
-    // 工作目录就在 /Applications 边上，加个点前缀别让它出现在访达里
+    // Hide the staging directory beside /Applications from Finder with a dot prefix.
     static const QLatin1String kWorkspacePrefix(".MoonlightUpdate-");
 #else
     static const QLatin1String kWorkspacePrefix("MoonlightPortableUpdate-");
@@ -347,8 +347,8 @@ qint64 PortableUpdateInstaller::estimateRequiredWorkspaceBytes(qint64 archiveByt
 
     static const qint64 kSafetyMarginBytes = 64LL * 1024 * 1024;
 
-    // 下载下来的包和解出来的一份要同时存在（Windows 是 zip + 解压目录，
-    // macOS 是 dmg + ditto 出来的 bundle），另外给替换过程留一份余量。
+    // Allow space for both the download and extracted content (ZIP/directory on Windows,
+    // DMG/copied bundle on macOS), plus additional room for replacement.
     return archiveBytes * 3 + kSafetyMarginBytes;
 }
 
@@ -398,10 +398,9 @@ bool PortableUpdateInstaller::runTool(const QString& program,
         return false;
     }
 
-    // 用局部事件循环等，而不是 waitForFinished()。hdiutil / ditto 正常也要跑几秒，
-    // 卡住的话就是分钟级 —— waitForFinished() 会把主线程连界面一起冻住，连那句
-    // 「正在校验更新…」都不会重绘。ExcludeUserInputEvents 保证重绘照做，但这期间
-    // 用户点不动东西，不会在半路触发别的操作。
+    // Wait with a local event loop, not waitForFinished(), to keep painting responsive
+    // while hdiutil or ditto runs. ExcludeUserInputEvents prevents unrelated user actions
+    // from interrupting installation while status text continues to repaint.
     if (process.state() != QProcess::NotRunning) {
         QEventLoop loop;
         QTimer timeoutTimer;
@@ -439,17 +438,16 @@ bool PortableUpdateInstaller::stageMacUpdateBundle(const QString& archivePath,
                                                    QString& errorMessage)
 {
 #if defined(Q_OS_DARWIN)
-    // 这几步是同步的，界面会卡住一两秒（ditto 一个 200MB 的 bundle）。放在这里而不是
-    // 丢给后面那个 detached 脚本，是为了让「DMG 打不开」「里面没有 Moonlight.app」
-    // 这类失败还能弹回对话框 —— 脚本是在进程退出之后才跑的，那时候没人能看到错误。
+    // Prepare synchronously here so mount or missing-bundle errors can still be shown
+    // in the application. The detached script runs after exit and cannot show this dialog.
     QString mountPoint = QDir(m_PortableUpdateWorkspace).filePath(QStringLiteral("mnt"));
     if (!QDir().mkpath(mountPoint)) {
         errorMessage = tr("Unable to create a temporary folder for the update.");
         return false;
     }
 
-    // 挂到我们自己的目录下：-nobrowse 不在访达里露出来，也不会和用户手动挂载的
-    // 同名卷抢 /Volumes/Moonlight 这个位置。
+    // Mount privately with -nobrowse to hide the volume from Finder and avoid competing
+    // with a manually mounted /Volumes/Moonlight volume.
     if (!runTool(QStringLiteral("/usr/bin/hdiutil"),
                  { QStringLiteral("attach"), archivePath,
                    QStringLiteral("-nobrowse"), QStringLiteral("-noautoopen"),
@@ -467,16 +465,15 @@ bool PortableUpdateInstaller::stageMacUpdateBundle(const QString& archivePath,
     if (!QFileInfo(bundleInImage).isDir()) {
         errorMessage = tr("The downloaded disk image does not contain Moonlight.");
     }
-    // 用 ditto 而不是 cp -R：它保留扩展属性、符号链接和 bundle 的元数据，
-    // 少了这些代码签名会直接失效。
+    // Use ditto to preserve extended attributes, symlinks, and bundle metadata
+    // required for code-signature validity.
     else if (!runTool(QStringLiteral("/usr/bin/ditto"), { bundleInImage, stagedBundle }, 300000)) {
         errorMessage = tr("Unable to extract the update.");
-    }
-    else {
+    } else {
         staged = true;
     }
 
-    // 成不成都要卸载，否则挂载点会一直留在系统里
+    // Unmount even after a preparation failure so no mount point is left behind.
     runTool(QStringLiteral("/usr/bin/hdiutil"),
             { QStringLiteral("detach"), mountPoint, QStringLiteral("-quiet") }, 60000);
 
@@ -484,14 +481,13 @@ bool PortableUpdateInstaller::stageMacUpdateBundle(const QString& archivePath,
         return false;
     }
 
-    // 下载下来的东西带 com.apple.quarantine。不清掉的话，未公证的包会被 Gatekeeper
-    // 拦下来，用户看到的是「应用已损坏，应移到废纸篓」。
+    // Downloaded bundles carry com.apple.quarantine. The existing update path removes
+    // it to allow non-notarized builds to launch without Gatekeeper's damaged-app prompt.
     runTool(QStringLiteral("/usr/bin/xattr"),
             { QStringLiteral("-dr"), QStringLiteral("com.apple.quarantine"), stagedBundle }, 60000);
 
-    // 完整性自检。CI 出的包是 ad-hoc 签名，codesign 能验出封装有没有被动过；
-    // 但完全没签名的包这里也会失败，所以只记日志不拦下 —— 传输层已经有 TLS 和
-    // GitHub 的证书，为了这个把合法更新挡住不值得。
+    // Check the bundle's ad-hoc signature for modification. Unsigned builds also fail
+    // this check, so report it without rejecting the update; downloads already use TLS.
     if (!runTool(QStringLiteral("/usr/bin/codesign"),
                  { QStringLiteral("--verify"), QStringLiteral("--strict"), stagedBundle }, 120000)) {
         qWarning() << "Update bundle failed codesign verification; installing anyway";
@@ -619,7 +615,7 @@ void PortableUpdateInstaller::handlePortableUpdateDownloadFinished()
     }
 
 #if defined(Q_OS_DARWIN)
-    // 先把 DMG 里的 bundle 挂载、拷出来、清掉隔离属性，失败还来得及弹对话框
+    // Prepare the DMG bundle before exit so failures can still be reported in a dialog.
     QString stagedBundle;
     QString stageError;
     if (!stageMacUpdateBundle(archivePath, stagedBundle, stageError)) {
@@ -641,14 +637,14 @@ void PortableUpdateInstaller::handlePortableUpdateDownloadFinished()
     QString workingDirectory;
 
 #if defined(Q_OS_DARWIN)
-    // 换 bundle 必须等这个进程退出，所以把 pid 传给脚本让它自己等
+    // Pass our PID so the replacement script waits for this process to exit.
     arguments << scriptPath
               << m_PortableUpdateWorkspace
               << getInstalledBundlePath()
               << stagedBundle
               << QString::number(QCoreApplication::applicationPid());
 
-    // 工作目录不能落在即将被替换掉的 bundle 里
+    // The working directory must not be inside the bundle being replaced.
     workingDirectory = QDir::homePath();
 #else
     QString installDir = QDir::toNativeSeparators(Path::getPortableRootDir());
@@ -686,7 +682,7 @@ void PortableUpdateInstaller::handlePortableUpdateDownloadFinished()
         m_UpdateFile = nullptr;
     }
 
-    // 注意：这里不能 resetPortableUpdateState(true) —— 工作目录里放着脚本、
-    // 暂存好的 bundle 和备份，删掉更新就没了。清理由脚本自己收尾。
+    // Do not call resetPortableUpdateState(true): staging contains the installer script,
+    // replacement bundle, and backup. The script performs cleanup after completion.
     QTimer::singleShot(0, qApp, &QCoreApplication::quit);
 }
