@@ -73,7 +73,9 @@ The installer creates `%ProgramData%\MoonlightManagedAccess` with inheritance di
 
 This host design trusts the Apollo daemon, managed-access agent, and local administrators. The Windows account exposed in an interactive streamed session must remain a non-administrator; an interactive administrator can edit SYSTEM-protected policy and secrets and therefore bypass this local boundary.
 
-Apollo is stopped before its configuration changes. The installer backs up the configuration inside the protected root and updates only the `managed_policy_file` directive, preserving every other line. It restarts Apollo and requires `/serverinfo` to report `ManagedAccessProtocol` 1 before registering and starting the agent. If that check or agent startup fails, it removes a partial agent service, restores the exact backup, and restarts Apollo with its old configuration.
+Apollo is stopped before its configuration changes. The installer backs up the configuration inside the protected root and updates only the `managed_policy_file` directive, preserving every other line. It restarts Apollo and requires `/serverinfo` to report `ManagedAccessProtocol` 1 before registering the agent. After agent startup it waits up to 30 seconds for a newly written protocol 1 policy with a bounded future validity time and a leases array. A running service without a usable backend, TLS path, host token, or enabled machine therefore fails installation instead of reporting false readiness.
+
+If any step after the Apollo stop attempt fails, rollback stops and disables a partial agent, removes its policy, restores the exact protected Apollo backup, and returns Apollo to its original running or stopped state. If any restoration or cleanup step is uncertain, policy removal is attempted and both daemons are left stopped so Apollo cannot consume unknown authorization state.
 
 To revoke local managed access immediately, run the fail-closed helper as administrator:
 

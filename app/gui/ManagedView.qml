@@ -131,6 +131,8 @@ Item {
             root.localMessage = ""
             if (root.StackView.status === StackView.Active) {
                 root.openMachine(computerIndex, name)
+            } else {
+                ManagedBackend.releaseConnections()
             }
         }
 

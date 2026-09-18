@@ -279,16 +279,75 @@ function Wait-ManagedProtocol([int]$Port, [int]$Seconds) {
     throw 'Apollo did not report ManagedAccessProtocol 1 after restart.'
 }
 
+function Get-AgentPolicyReadinessError([string]$Path) {
+    try {
+        if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+            return 'the agent has not written a policy file'
+        }
+        Assert-NoReparseSegments $Path
+        $item = Get-Item -LiteralPath $Path -Force
+        if ($item.Length -lt 2 -or $item.Length -gt (512 * 1024)) {
+            return 'the policy file size is invalid'
+        }
+        $policy = ([IO.File]::ReadAllText($Path) | ConvertFrom-Json)
+        $protocolProperty = $policy.PSObject.Properties['protocol']
+        $validUntilProperty = $policy.PSObject.Properties['valid_until']
+        $leasesProperty = $policy.PSObject.Properties['leases']
+        if ($null -eq $protocolProperty -or [int]$protocolProperty.Value -ne 1) {
+            return 'the policy protocol is not 1'
+        }
+        if ($null -eq $validUntilProperty) {
+            return 'the policy has no valid_until value'
+        }
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $validUntil = [long]$validUntilProperty.Value
+        if ($validUntil -le $now -or $validUntil -gt ($now + 120)) {
+            return 'the policy validity window is outside the allowed readiness range'
+        }
+        if ($null -eq $leasesProperty -or -not ($leasesProperty.Value -is [Array])) {
+            return 'the policy leases value is not an array'
+        }
+        return $null
+    }
+    catch {
+        return $_.Exception.Message
+    }
+}
+
+function Wait-AgentPolicyReady([string]$Path, [int]$Seconds) {
+    $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+    $lastError = 'the readiness check has not run'
+    do {
+        $service = Get-Service -Name $agentServiceName -ErrorAction Stop
+        if ($service.Status -ne [ServiceProcess.ServiceControllerStatus]::Running) {
+            $lastError = 'the managed host agent service is not running'
+        }
+        else {
+            $lastError = Get-AgentPolicyReadinessError $Path
+            if ($null -eq $lastError) {
+                return
+            }
+        }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw "Backend readiness failed: the agent did not produce a valid protocol 1 policy within $Seconds seconds ($lastError). Check the backend URL, TLS trust, host token, and machine state."
+}
+
 function Remove-AgentServiceIfPresent {
     $service = Get-Service -Name $agentServiceName -ErrorAction SilentlyContinue
     if ($null -eq $service) {
         return
     }
     if ($service.Status -ne [ServiceProcess.ServiceControllerStatus]::Stopped) {
-        Stop-Service -Name $agentServiceName -Force -ErrorAction SilentlyContinue
+        Stop-Service -Name $agentServiceName -Force
+        Wait-ServiceState $agentServiceName 'Stopped' 20
     }
+    Set-Service -Name $agentServiceName -StartupType Disabled
     $sc = Join-Path $env:SystemRoot 'System32\sc.exe'
     & $sc @('delete', $agentServiceName) | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Unable to delete the partial managed host agent service; it was left stopped and disabled.'
+    }
 }
 
 Assert-Administrator
@@ -334,8 +393,11 @@ if ($null -ne (Get-Service -Name $agentServiceName -ErrorAction SilentlyContinue
     throw "$agentServiceName is already installed. Disable or remove the existing installation before reinstalling."
 }
 
-$configChanged = $false
 $agentServiceCreated = $false
+$backupCreated = $false
+$apolloStopAttempted = $false
+$apolloStopSucceeded = $false
+$apolloOriginallyRunning = (Get-Service -Name $ApolloServiceName).Status -eq [ServiceProcess.ServiceControllerStatus]::Running
 $originalApolloConfig = [IO.File]::ReadAllText($ApolloConfig)
 $originalDirective = Get-ApolloDirective $originalApolloConfig
 
@@ -369,6 +431,7 @@ try {
 
     Copy-Item -LiteralPath $ApolloConfig -Destination $backupFile -Force
     Set-PrivateFileAcl $backupFile
+    $backupCreated = $true
 
     $bstr = [IntPtr]::Zero
     $plainToken = $null
@@ -405,11 +468,14 @@ try {
     }
     Write-Utf8FileAtomic $stateFile (($state | ConvertTo-Json -Depth 2) + [Environment]::NewLine)
 
-    Stop-Service -Name $ApolloServiceName -Force
+    $apolloStopAttempted = $true
+    if ((Get-Service -Name $ApolloServiceName).Status -ne [ServiceProcess.ServiceControllerStatus]::Stopped) {
+        Stop-Service -Name $ApolloServiceName -Force
+    }
     Wait-ServiceState $ApolloServiceName 'Stopped' 20
+    $apolloStopSucceeded = $true
     $updatedApolloConfig = Set-ApolloDirective $originalApolloConfig $policyFile
     Write-ApolloConfigAtomic $ApolloConfig $updatedApolloConfig
-    $configChanged = $true
 
     Start-Service -Name $ApolloServiceName
     Wait-ServiceState $ApolloServiceName 'Running' 30
@@ -417,6 +483,10 @@ try {
 
     if ($installedAgent.Contains('"') -or $agentConfig.Contains('"')) {
         throw 'Installer paths containing quote characters are not supported.'
+    }
+    if (Test-Path -LiteralPath $policyFile) {
+        Assert-NoReparseSegments $policyFile
+        Remove-Item -LiteralPath $policyFile -Force
     }
     $binaryPath = '"' + $installedAgent + '" -config "' + $agentConfig + '"'
     New-Service -Name $agentServiceName -BinaryPathName $binaryPath -DisplayName 'Moonlight Managed Host Agent' -StartupType Automatic | Out-Null
@@ -434,31 +504,75 @@ try {
 
     Start-Service -Name $agentServiceName
     Wait-ServiceState $agentServiceName 'Running' 15
-    Start-Sleep -Seconds 2
-    if ((Get-Service -Name $agentServiceName).Status -ne [ServiceProcess.ServiceControllerStatus]::Running) {
-        throw 'The managed host agent stopped during its startup check.'
-    }
+    Wait-AgentPolicyReady $policyFile 30
 
-    Write-Host 'Managed host agent installed. Apollo reports ManagedAccessProtocol 1 and the agent service is running.'
+    Write-Host 'Managed host agent installed. Apollo reports ManagedAccessProtocol 1 and the backend delivered a valid initial policy.'
 }
 catch {
     $failure = $_
+    $rollbackFailure = $null
     if ($agentServiceCreated) {
-        Remove-AgentServiceIfPresent
-    }
-    if ($configChanged) {
         try {
-            Stop-Service -Name $ApolloServiceName -Force -ErrorAction SilentlyContinue
-            $backupContents = [IO.File]::ReadAllText($backupFile)
-            Write-ApolloConfigAtomic $ApolloConfig $backupContents
-            Start-Service -Name $ApolloServiceName
+            Remove-AgentServiceIfPresent
         }
         catch {
-            Write-Warning "Rollback could not restore Apollo configuration: $($_.Exception.Message)"
+            $rollbackFailure = $_.Exception.Message
+            Stop-Service -Name $agentServiceName -Force -ErrorAction SilentlyContinue
+            Set-Service -Name $agentServiceName -StartupType Disabled -ErrorAction SilentlyContinue
         }
     }
-    if (Test-Path -LiteralPath $agentConfig) {
-        Remove-Item -LiteralPath $agentConfig -Force
+    if ($apolloStopAttempted) {
+        if (-not $apolloStopSucceeded) {
+            Write-Verbose 'Apollo stop did not report success; rollback will still force a stopped state before restoring the backup.'
+        }
+        try {
+            if (-not $backupCreated) {
+                throw 'the protected Apollo configuration backup is unavailable'
+            }
+            if ((Get-Service -Name $ApolloServiceName).Status -ne [ServiceProcess.ServiceControllerStatus]::Stopped) {
+                Stop-Service -Name $ApolloServiceName -Force
+                Wait-ServiceState $ApolloServiceName 'Stopped' 20
+            }
+            $backupContents = [IO.File]::ReadAllText($backupFile)
+            Write-ApolloConfigAtomic $ApolloConfig $backupContents
+            if ($apolloOriginallyRunning) {
+                Start-Service -Name $ApolloServiceName
+                Wait-ServiceState $ApolloServiceName 'Running' 30
+            }
+        }
+        catch {
+            $apolloRollbackFailure = $_.Exception.Message
+            if ($null -eq $rollbackFailure) {
+                $rollbackFailure = $apolloRollbackFailure
+            }
+            else {
+                $rollbackFailure += '; ' + $apolloRollbackFailure
+            }
+            Stop-Service -Name $ApolloServiceName -Force -ErrorAction SilentlyContinue
+        }
+    }
+    foreach ($cleanupPath in @($policyFile, $agentConfig, $stateFile)) {
+        try {
+            if (Test-Path -LiteralPath $cleanupPath) {
+                Assert-NoReparseSegments $cleanupPath
+                Remove-Item -LiteralPath $cleanupPath -Force
+            }
+        }
+        catch {
+            $cleanupFailure = "unable to remove $cleanupPath`: $($_.Exception.Message)"
+            if ($null -eq $rollbackFailure) {
+                $rollbackFailure = $cleanupFailure
+            }
+            else {
+                $rollbackFailure += '; ' + $cleanupFailure
+            }
+        }
+    }
+    if ($null -ne $rollbackFailure) {
+        Stop-Service -Name $agentServiceName -Force -ErrorAction SilentlyContinue
+        Set-Service -Name $agentServiceName -StartupType Disabled -ErrorAction SilentlyContinue
+        Stop-Service -Name $ApolloServiceName -Force -ErrorAction SilentlyContinue
+        throw "Installation failed: $($failure.Exception.Message) Rollback also failed: $rollbackFailure Apollo and the managed agent were left stopped; policy removal was attempted."
     }
     throw $failure
 }
