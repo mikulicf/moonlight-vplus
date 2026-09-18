@@ -4,10 +4,10 @@ This is the independently maintained [mikulicf fork](https://github.com/mikulicf
 
 See [external services and dependencies](docs/external-services.md) and [tracking both upstreams](docs/upstream-sync.md).
 
-[中文](README.md)
+[Documentation](docs/architecture.md)
 
-[![Build](https://img.shields.io/github/actions/workflow/status/qiin2333/moonlight-qt/build.yml?branch=master)](https://github.com/qiin2333/moonlight-qt/actions/workflows/build.yml?query=branch%3Amaster)
-[![Downloads](https://img.shields.io/github/downloads/qiin2333/moonlight-qt/total)](https://github.com/mikulicf/moonlight-vplus/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/mikulicf/moonlight-vplus/build.yml?branch=master)](https://github.com/mikulicf/moonlight-vplus/actions/workflows/build.yml?query=branch%3Amaster)
+[![Downloads](https://img.shields.io/github/downloads/mikulicf/moonlight-vplus/total)](https://github.com/mikulicf/moonlight-vplus/releases)
 
 Moonlight V+ for PC is an enhanced desktop client based on [moonlight-stream/moonlight-qt](https://github.com/moonlight-stream/moonlight-qt), designed to work closely with [Foundation Sunshine](https://github.com/qiin2333/Sunshine).
 

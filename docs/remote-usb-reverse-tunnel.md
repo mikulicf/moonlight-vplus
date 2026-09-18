@@ -1,136 +1,101 @@
-# Remote USB 反向隧道
+# Remote USB reverse tunnel
 
-Moonlight 把客户端本机 USB/IP 服务器通过 TLS 反向转发给 Sunshine；Sunshine 启动 usbip-win2，将设备导入游戏主机。两端隧道只转发字节，不解析 USB/IP，不运行 RUSB broker、framing、Rust core 或独立 usb-agent。
+Moonlight forwards the client's local USB/IP server to Sunshine through a reverse TLS tunnel. Sunshine launches usbip-win2 to import the device on the streaming host. Both tunnel endpoints forward bytes without parsing USB/IP. This path does not use a RUSB broker, additional framing, a Rust core, or a separate usb-agent.
 
+```text
+USB device -> usbipd-win -> Moonlight Tunnel -> TLS -> Sunshine reverse_tunnel_service -> usbip-win2 -> Windows device
 ```
-USB 设备 → usbipd-win → Moonlight Tunnel → TLS → Sunshine reverse_tunnel_service → usbip-win2 → Windows 设备
-```
 
-## 当前支持范围
+## Current support
 
-- Windows 客户端：`UsbForwardingBackend` 管理 usbipd-win 的设备共享与枚举。
-- Windows 主机：`usbip_host_controller` 调用 usbip-win2。
-- macOS 客户端：捆绑 `moonlight-usbd` helper（usbipdcpp v1.0.9 + libusb v1.0.29，`usb-helper/`），详见下文「macOS 客户端」。
-- Android 客户端在 moonlight-vplus 工程中集成独立的 USB/IP 导出后端，使用同一能力接口和隧道协议；本 Qt 工程不提供 Linux 客户端 USB 后端。
-- Linux 主机 controller 当前返回 unsupported。
+- Windows clients: `UsbForwardingBackend` manages usbipd-win device sharing and enumeration.
+- Windows hosts: `usbip_host_controller` invokes usbip-win2.
+- macOS clients: the bundled `moonlight-usbd` helper uses usbipdcpp v1.0.9 and libusb v1.0.29; see `usb-helper/` and the next section.
+- The separate Android Moonlight V+ project implements its own USB/IP export backend using the same capability API and tunnel protocol. This Qt project has no Linux client USB backend.
+- The Linux host controller currently reports unsupported.
 
-## macOS 客户端（moonlight-usbd）
+## macOS client: moonlight-usbd
 
-macOS 没有常驻 USB/IP 服务，客户端在 app bundle 内自带 `moonlight-usbd`
-（`Contents/MacOS/moonlight-usbd`，源码 `usb-helper/`，CMake 构建，与 qmake 主
-工程隔离；开发时可用 `MOONLIGHT_USB_HELPER` 环境变量指定路径）。基于
-usbipdcpp（LGPL-3.0）的 `LibusbServer` + vendored libusb v1.0.29（LGPL-2.1+，
-直接编译源文件），全部静态链接。许可组合：LGPL-3.0 条款允许单升入 GPL-3.0，
-与 moonlight-qt 的 GPL-3.0 兼容；usbipdcpp README 要求显著署名（About 页法律
-卡已列出）。
+macOS has no persistent USB/IP service in this implementation. The application bundles `Contents/MacOS/moonlight-usbd`, built from `usb-helper/` with CMake separately from the main qmake project. Developers can override its path with `MOONLIGHT_USB_HELPER`.
 
-行为与 Windows 后端的差异：
+The helper statically links usbipdcpp's `LibusbServer` (LGPL-3.0) and vendored libusb v1.0.29 (LGPL-2.1-or-later), compiling libusb from source. The upstream integration uses the LGPL-3.0 provisions for conveying the combined work under GPL-3.0, matching Moonlight Qt's license. Retain the component licenses and distribution obligations. The usbipdcpp README requests prominent attribution, which is included on the About page.
 
-- 设备枚举：`moonlight-usbd list --json` 一次性输出（busId/vid/pid/vidPid/
-  serial/manufacturer/product/claimable），`UsbForwardingBackend::refresh()`
-  的 macOS 分支解析（`parseHelperDevices`，tests/usb_forwarding_backend_list
-  覆盖）。busId 是 libusb 拓扑路径（`1-2`，经 hub `1-2.3`），与 usbipdcpp
-  `find_by_busid` 的生成算法保持字节级一致。
-- 绑定持久化在 Moonlight 偏好（`usbforwardingbound`，busid 列表）；Windows
-  上这一状态由 usbipd 自己的注册表承担。bind/unbind 无提权。注意 busid 是
-  拓扑地址：换 USB 口重插会失配，绑定显示为消失（v1 已知限制）。
-- 本地服务器：转发时由 Session 经 `UsbForwardingLocalServer` 拉起
-  `moonlight-usbd serve --bind <busid> --listen 127.0.0.1:0`，读 stdout 的
-  `READY <port>` 行把隧道 `TunnelConfig.localPort` 指到该临时端口；关闭 stdin
-  或 SIGTERM 优雅退出。隧道本体/能力接口/证书校验与 Windows 完全一致。
-- 平台限制（本质，无法在普通权限下绕过）：macOS 系统驱动（HID 手柄/键盘、
-  存储、摄像头）持有的接口 libusb 无法 claim。helper 逐设备做占用探测
-  （claim/release 探测），被占用的设备在列表中标注「In use by macOS」且不可
-  共享。让这类设备可转发需要 root（libusb 1.0.27+ 的 Darwin detach），预留给
-  未来的特权 helper（SMAppService），不在当前范围。
+Differences from the Windows backend:
 
-## 鉴权与配置
+- **Enumeration:** `moonlight-usbd list --json` produces one result containing `busId`, `vid`, `pid`, `vidPid`, `serial`, `manufacturer`, `product`, and `claimable`. The macOS branch of `UsbForwardingBackend::refresh()` parses it through `parseHelperDevices`, covered by `tests/usb_forwarding_backend_list`. A bus ID is a libusb topology path such as `1-2`, or `1-2.3` through a hub. Its generation must exactly match usbipdcpp's `find_by_busid` convention.
+- **Persistent bindings:** Moonlight stores the bus ID list in the `usbforwardingbound` preference; Windows uses usbipd's registry state. Binding and unbinding need no elevation. A bus ID identifies a physical topology position, so reconnecting a device to a different USB port makes the saved binding appear missing. This is a known limitation of the first version.
+- **Local server:** `Session` uses `UsbForwardingLocalServer` to launch `moonlight-usbd serve --bind <busid> --listen 127.0.0.1:0`. It reads the `READY <port>` stdout line and sets `TunnelConfig.localPort` to that temporary port. Closing stdin or sending SIGTERM stops the helper gracefully. The tunnel, capability API, and certificate verification are otherwise identical to Windows.
+- **Platform limitations:** libusb cannot claim interfaces held by macOS system drivers, including many HID controllers, keyboards, storage devices, and cameras. The helper probes occupancy by claiming and releasing interfaces. Occupied devices appear as “In use by macOS” and cannot be shared. Supporting these devices would require a privileged helper, potentially using SMAppService and the Darwin detach support in libusb 1.0.27 or later. That is outside the current implementation.
 
-Moonlight 使用配对时保存的客户端证书/私钥，并验证 Sunshine 的证书与配对 pin 完全一致。通过 IP 连接时不要求证书 CN 等于 IP；任何不同的证书仍被拒绝。Sunshine 要求客户端出示已配对证书，并校验 JSON 中的共享 token。
+## Authentication and configuration
 
-Qt 和 Android 统一通过已配对、固定主机证书的 HTTPS 连接请求
-`GET /api/v1/usb-forwarding`，不再读取端口/token 环境变量。接口版本为 1，
-响应上限 4096 字节，包含 `enabled`、`available`、`reason`；只有可用时才返回
-`port`（1–65535 的整数）和 `token`（64 位十六进制字符串）。
-`available` 表示主机隧道服务可接入，不代表驱动已正常导入设备；设备可用性须在实际导入后验证。
-能力请求不跟随重定向，5 秒内结束；即使证书受系统 CA 信任，也必须与配对证书完全匹配。
+Moonlight uses the client certificate and private key saved during pairing and verifies that Sunshine presents exactly the pinned host certificate. When connecting by IP, the certificate's common name need not match the IP, but any different certificate is rejected. Sunshine requires a paired client certificate and validates the shared token in the JSON handshake.
 
-Sunshine 默认关闭转发；在 Web 设置的输入页启用 `usb_forwarding_enabled`，
-保存并重启后生效。`usb_forwarding_port` 默认 0（自动使用主端口 +7，通常为 47996）；
-显式填写 1024–65535 可覆盖，客户端始终使用能力接口公布的实际端口。主机必须安装 usbip-win2
-及匹配驱动，跨网络使用还需允许/转发对应 TCP 端口，不自动配置路由器。
+Qt and Android obtain credentials through `GET /api/v1/usb-forwarding` over paired HTTPS with host-certificate pinning; they no longer read the port or token from environment variables. The API is version 1 and limits responses to 4096 bytes. Responses include `enabled`, `available`, and `reason`. Only an available service returns `port` (an integer from 1 to 65535) and `token` (64 hexadecimal characters).
 
-Qt 用户先在设置中启用 USB 转发，并通过设备管理将要使用的外设共享（绑定）；
-开始串流后，在 USB 菜单中明确选择设备才获取凭据、启动隧道。
-关闭共享或结束串流会释放导入；取消期间未完成的凭据请求不能重新启动共享。
-主机重启后再次选择设备会重新获取凭据。
+`available` indicates that the host tunnel service can accept a connection, not that a driver has successfully imported a device. Verify device usability after import. The capability request has a five-second timeout and does not follow redirects. Even a certificate trusted by the system's certificate authorities must exactly match the pairing pin.
 
-token 仅保存在内存中，按主机进程生命周期生成和轮换，不是逐串流令牌。
-接口要求客户端仍在配对列表中，返回 `Cache-Control: no-store`；实际隧道再次校验
-配对证书和 token。不要把 token、私钥或用户配对状态写入日志或提交到仓库。
-本功能信任获准转发的已配对客户端，不承诺任意 USB 类别均可安全或可靠使用。
+Forwarding is disabled by default on Sunshine. Enable `usb_forwarding_enabled` on the web settings Input page, save, and restart. `usb_forwarding_port` defaults to `0`, meaning the main port plus seven, normally `47996`. An explicit value from 1024 to 65535 overrides it; clients always use the port advertised by the capability API. The host needs usbip-win2 and its matching driver. Connections across networks also require the corresponding TCP port to be allowed or forwarded; the application does not configure the router automatically.
 
-## 建立连接
+In Qt, enable USB forwarding in settings and share, or bind, the desired peripheral through device management. After streaming starts, explicitly selecting a device in the USB menu retrieves credentials and starts the tunnel. Releasing the device or ending the stream releases the import. An outstanding credential request must not restart sharing after cancellation. Selecting a device again after a host restart retrieves fresh credentials.
 
-Windows 客户端在设置页以及每次连接前，通过只读 SCM 查询同时检查 `usbipd`
-服务和 `VBoxUSBMon` 驱动；查询失败或任一未运行时不启动隧道。该检查只是必要条件，
-不能证明实际 import 成功。服务运行、设备已共享、TLS ready、设备导入成功是不同状态。
+The token stays in memory and is generated and rotated with the host process; it is not a per-stream token. The capability API requires the client to remain paired and returns `Cache-Control: no-store`. The tunnel checks both the paired certificate and token again. Never log or commit tokens, private keys, or user pairing state. This feature trusts paired clients authorized to forward devices; it does not guarantee that every USB device class will work safely or reliably.
 
-### 2026-09-09 本机复测（未完成验收）
+## Connection establishment
 
-正常 PIN 配对、重启 Qt 后配对保留、运行时能力获取及 K380 导入均已实测；
-主机记录 hub port 1，11 个相关 PnP 节点正常。实际按键、停止回收、重连和退出清理
-尚未在这轮正式配置流程中完成验收；悬浮菜单还存在待定位的关闭/交互问题。
+The Windows client performs a read-only Service Control Manager query in settings and before each connection to check both the `usbipd` service and the `VBoxUSBMon` driver. It does not start the tunnel if the query fails or either component is stopped. This is a necessary condition, not proof that import will succeed. Service readiness, sharing, tunnel readiness, and successful device import are distinct states.
 
-测试环境曾缺少 `usbipd` 对 `VBoxUSBMon` 的服务依赖，导致驱动不启动及
-`CreateFile` 错误；随后出现原生 attach 超时、主机退出超时和服务启动文件占用。
-重启系统、补回依赖并启动驱动后导入成功。这些环境操作不由客户端自动执行，
-也不能据此宣称此前所有超时根因已解决。客户端只增加只读预检和准确的失败提示。
+### Historical retest: September 9, 2026 — acceptance incomplete
 
-### 连接步骤
+The upstream retest verified normal PIN pairing, persistence after restarting Qt, runtime capability retrieval, and K380 import. The host reported hub port 1 and eleven healthy related PnP nodes. Actual keystrokes, release, reconnection, and exit cleanup were not yet accepted in that round of the normal configuration flow. Overlay menu closing and interaction problems also remained under investigation.
 
-1. Moonlight 连接本机 USB/IP 服务器（默认 `127.0.0.1:3240`），并连接 Sunshine TLS 端口。
-2. 验证配对证书后发送一行 JSON：
-   `{"op":"forward","token":"<token>","busid":"1-2"}\n`。
-3. Sunshine 验证证书、token、busid 并占用设备槽，然后监听临时 loopback 端口。
-4. Sunshine 先挂起异步 accept，再启动 `usbip --tcp-port <port> attach --remote 127.0.0.1 --bus-id <busid> --once --terse`。
-5. helper 连接后，Sunshine 返回 `{"op":"ready"}\n` 并立即开始双向转发。**ready 表示字节隧道就绪，不表示设备已经完成导入。** usbip-win2 必须先通过这条隧道完成 USB/IP import 才能报告 attach 成功。
-6. helper 返回 hub port 后，Sunshine 记录本次绑定并取消启动超时。
+The test environment lacked the `usbipd` service dependency on `VBoxUSBMon`, causing driver startup and `CreateFile` failures. Native attach timeouts, host exit timeouts, and service startup file-locking problems followed. Import succeeded after rebooting, restoring the dependency, and starting the driver. The client does not perform those environment repairs automatically, and the result does not establish that every earlier timeout had the same cause. The client changes added only read-only preflight checks and accurate failure messages.
 
-ready 之前的拒绝用一行 `{"op":"error","reason":"..."}` 返回。ready 之后所有字节都属于 USB/IP，attach 失败只能关闭连接，不能插入 JSON。
+### Protocol sequence
 
-## 生命周期与资源限制
+1. Moonlight connects to the local USB/IP server, normally `127.0.0.1:3240`, and Sunshine's TLS port.
+2. After verifying the paired certificate, it sends one JSON line: `{"op":"forward","token":"<token>","busid":"1-2"}\n`.
+3. Sunshine validates the certificate, token, and bus ID, reserves the device slot, and listens on a temporary loopback port.
+4. Sunshine starts an asynchronous accept before launching `usbip --tcp-port <port> attach --remote 127.0.0.1 --bus-id <busid> --once --terse`.
+5. When the helper connects, Sunshine replies with `{"op":"ready"}\n` and immediately begins bidirectional forwarding. **Ready means the byte tunnel is established, not that device import is complete.** usbip-win2 must finish USB/IP import through this tunnel before reporting successful attach.
+6. When the helper returns a hub port, Sunshine records the binding and cancels the startup timeout.
 
-- Sunshine 端每个 busid 一条活动隧道，重复请求被拒绝；Moonlight 客户端当前限制为全局一条活动隧道。
-- 客户端启动超时 15 秒（须覆盖主机侧完整窗口），Sunshine 启动超时 12 秒；主机 attach 仍受 controller 超时约束。
-- JSON 握手行限制 4 KiB；握手后的剩余字节必须继续转发。
-- 客户端采用 4 MiB 读取缓冲/写队列高水位，主机每方向按 64 KiB 异步读写，依赖 TCP 背压。
-- 用户释放、串流结束或任一 socket 断开会关闭本端两条连接；主机取消未完成 attach，并 detach 已接受的绑定。
-- controller 生成本地 `binding_id` 区分先后两次 attach，防止临时端口与 hub port 复用后旧 detach 误拆新设备。该编号不在隧道协议上传输，也不依赖客户端 RUSB token。
-- Sunshine 用 Asio 的证书验证回调 API，不能覆盖 Asio 所拥有的 `SSL_CTX` app_data。
+Before ready, rejection is a single `{"op":"error","reason":"..."}` line. After ready, every byte belongs to USB/IP: an attach failure must close the connection rather than inject JSON into the stream.
 
-## 代码与验证入口
+## Lifecycle and resource limits
 
-- 客户端：`app/backend/usbforwardingtunnel.{h,cpp}`；`Session` 管理 UI 与串流生命周期。
-- 主机：[Sunshine PR #1034](https://github.com/AlkaidLab/foundation-sunshine/pull/1034)。
-- 客户端：[Moonlight Qt PR #209](https://github.com/qiin2333/moonlight-qt/pull/209)。
-- `tests/usb_forwarding_tunnel/usb_forwarding_tunnel.pro` 构建无视频会话的测试驱动，直接使用正式 `Tunnel` 类。
-- Sunshine 的 `reverse_tunnel_probe` 和 `tests/tools/test_reverse_tunnel.py` 覆盖 TLS/token 拒绝、先转发后完成 attach、断开重连以及双端隧道对拍。合成 helper 测试不等同于真实 USB 设备 E2E。
-- 主机原有 `loopback_usbip_bridge` 仍服务虚拟触摸屏 POC，不参与这条反向隧道。
+- Sunshine permits one active tunnel per bus ID and rejects duplicates. The Moonlight client currently permits one active tunnel globally.
+- Client startup times out after 15 seconds, covering the complete 12-second host startup window. Host attach also remains subject to the controller's timeout.
+- The JSON handshake line is limited to 4 KiB. Bytes read beyond the handshake must still be forwarded.
+- The client uses a 4 MiB read-buffer/write-queue high-water mark. The host performs asynchronous 64 KiB reads and writes in each direction and relies on TCP backpressure.
+- Releasing a device, ending the stream, or disconnecting either socket closes both local connections. The host cancels pending attach work and detaches accepted bindings.
+- The controller generates a local `binding_id` for each attach. It prevents an old detach from removing a new device after temporary or hub port reuse. This identifier is not transmitted in the tunnel protocol and does not depend on a client RUSB token.
+- Sunshine uses Asio's certificate-verification callback API; it must not overwrite the `SSL_CTX` app data owned by Asio.
 
-## Windows 实机验证（2026-09-06）
+## Implementation and validation entry points
 
-Windows 本机通过 usbipd-win 5.3.0 导出真实 Android 手机，正式 Qt `Tunnel` 经 SSH 端口转发连接 Win10 Hyper-V 虚拟机中的正式 Sunshine `reverse_tunnel_service`，由 usbip-win2 0.9.7.8 导入设备。
+- Client: `app/backend/usbforwardingtunnel.{h,cpp}`; `Session` manages the interface and streaming lifecycle.
+- Host implementation: [Sunshine PR #1034](https://github.com/AlkaidLab/foundation-sunshine/pull/1034).
+- Client implementation: [Moonlight Qt PR #209](https://github.com/qiin2333/moonlight-qt/pull/209).
+- `tests/usb_forwarding_tunnel/usb_forwarding_tunnel.pro` builds a driver that uses the production `Tunnel` class without a video session.
+- Sunshine's `reverse_tunnel_probe` and `tests/tools/test_reverse_tunnel.py` cover TLS/token rejection, forwarding before attach completion, disconnect/reconnect, and paired endpoint tests. Synthetic helpers do not establish real-device end-to-end compatibility.
+- The host's existing `loopback_usbip_bridge` serves the virtual touchscreen proof of concept and is not part of this reverse tunnel.
 
-- 无需手机点击授权：使用 WinUSB 标准控制请求，读取并校验设备 VID/PID 与序列号，每轮完成 20 次 `GET_STATUS`。
-- 两轮“导入 → 控制传输 → 释放”通过，第二轮可复用 hub port 1；每轮结束后导入端口为空，最终手机恢复本机 ADB 可用。
-- 初次测试与参数化脚本复跑均通过两轮。Sunshine 的 `tests/tools/run_usb_control_vm_e2e.py` 和 `usb_control_probe.cpp` 提供复现入口，详见其 `tests/tools/README-remote-usb.md`。
-- 此结果验证真实 USB 控制传输和断开重连。VM 中 ADB 仍需手机授权，未验证 ADB shell、持续 bulk/isochronous 吞吐、其他设备类别或完整视频串流/UI 生命周期。
+## Historical Windows hardware validation: September 6, 2026
 
-### 与实际视频串流联合验证
+The upstream test exported a real Android phone from Windows through usbipd-win 5.3.0. The production Qt `Tunnel` connected through an SSH port forward to the production Sunshine `reverse_tunnel_service` in a Windows 10 Hyper-V VM, where usbip-win2 0.9.7.8 imported the device.
 
-随后使用完整 Moonlight 和虚拟机中的完整 Sunshine 连续完成两轮会话：1024×768 H.264 桌面画面可见，实际串流 USB 菜单导入手机，每轮校验序列号并执行 20 次 WinUSB `GET_STATUS`，然后直接退出串流。两次退出均自动清空导入端口，重开串流后可再次导入，最终手机恢复本机 ADB 可用。客户端退出统计的接收/解码/呈现帧率分别为 30.0/30.0/30.0 和 30.1/30.1/30.0 FPS；观察到的网络丢帧为 0%。这两轮未使用独立隧道 probe，USB 与视频直接连接同一 VM。
+- Standard WinUSB control requests read and verified the device VID/PID and serial number without requiring phone authorization. Each round completed twenty `GET_STATUS` requests.
+- Two import/control-transfer/release cycles passed, with the second reusing hub port 1. Imported ports were empty after each release, and local ADB access returned at the end.
+- Both the initial test and the parameterized rerun passed two cycles. Reproduction tools are Sunshine's `tests/tools/run_usb_control_vm_e2e.py` and `usb_control_probe.cpp`; see its `tests/tools/README-remote-usb.md`.
+- These results cover real USB control transfers and reconnection. ADB inside the VM still required phone authorization. The tests did not cover ADB shell, sustained bulk or isochronous throughput, other device classes, or the complete video/UI lifecycle.
 
-通过配置为登录会话内 WGC 采集、Sunshine 软件编码与 Moonlight 软件解码。测试环境硬件解码报 hwframes context 初始化失败（-22）；VM 没有音频端点，因此硬件解码、音频、手柄和 USB bulk/isochronous 吞吐不计入此次通过范围。
+### Combined validation with video streaming
 
-测试部署需使用与 VM 驱动匹配的 usbip-win2 0.9.7.8 工具及配套 DLL。初次 CLI 配对在主机登记成功但客户端 pin 为空，成功测试前通过已认证 SSH 取得主机证书并固定到该测试主机；全新配对的 pin 持久化仍待单独验证。具体步骤与证据说明见 Sunshine 的 `tests/tools/README-remote-usb.md`。
+A subsequent upstream test used the complete Moonlight client and Sunshine host for two consecutive sessions. The 1024×768 H.264 desktop was visible, and the actual streaming USB menu imported the phone. Each session checked the serial number, performed twenty WinUSB `GET_STATUS` requests, and then exited the stream directly. Both exits automatically cleared the imported ports, and a new stream could import the phone again. Local ADB access returned at the end.
+
+Receive/decode/presentation rates were 30.0/30.0/30.0 FPS and 30.1/30.1/30.0 FPS, with 0% observed network frame loss. These sessions used the application itself, not the standalone tunnel probe, and USB and video connected directly to the same VM.
+
+The working configuration used WGC capture within the logged-in session, Sunshine software encoding, and Moonlight software decoding. Hardware decoding in that environment failed to initialize the hardware-frame context with error `-22`, and the VM had no audio endpoint. Hardware decoding, audio, gamepads, and USB bulk/isochronous throughput were therefore outside the validated scope.
+
+The deployment required usbip-win2 0.9.7.8 tools and matching DLLs for the VM's driver. Initial command-line pairing registered the client on the host but left the client's host pin empty. Before the successful historical test, the host certificate was obtained through authenticated SSH and pinned for that test host. Fresh-pairing pin persistence still required separate validation at that point. Sunshine's `tests/tools/README-remote-usb.md` records the procedure and evidence.

@@ -4804,7 +4804,7 @@ void Session::exec()
     constexpr Uint32 QT_UI_EVENT_PUMP_INTERVAL_MS = 10;
     Uint32 lastQtEventPumpTicks = 0;
     auto qtUiNeedsEventProcessing = [this]() {
-        // The floating button remains visible for the entire stream. Treating
+        // The floating button remains visible while the stream is focused. Treating
         // visibility as active Qt work forces this SDL loop to wake and drain
         // all Qt events every 10 ms even while the button is idle, which can
         // delay input and video processing.

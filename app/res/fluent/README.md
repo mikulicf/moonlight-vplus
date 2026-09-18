@@ -1,15 +1,12 @@
 # Fluent UI System Icons
 
-设置页分类导航和顶部工具栏用的图标，取自 [microsoft/fluentui-system-icons](https://github.com/microsoft/fluentui-system-icons)，
-MIT License, Copyright (c) 2020 Microsoft Corporation.
+The settings category navigation and top toolbar use icons from [microsoft/fluentui-system-icons](https://github.com/microsoft/fluentui-system-icons), distributed under the MIT License, Copyright (c) 2020 Microsoft Corporation.
 
-用的是 24px Regular 变体，唯一的改动是把 `fill="#212121"` 换成 `fill="#FFFFFF"`，
-因为我们的界面是深色底，图标在 QML 里靠 `opacity` 区分选中态。
+These are the 24 px Regular variants. The only modification is changing `fill="#212121"` to `fill="#FFFFFF"` for the dark interface. QML uses opacity to distinguish selected states.
 
-工具栏原来混用的是 Material 的 48px filled 图标（`ic_*_white_48px.svg`、`settings.svg` 等），
-实心笔画又粗又满，和这套线性几何图标放在一条 bar 上明显不是一个语言，所以整排换掉了。
+The toolbar previously mixed filled 48 px Material icons, including `ic_*_white_48px.svg` and `settings.svg`. Replacing the row with these outline icons gives it consistent shapes and stroke weights.
 
-| 文件 | 上游资源 |
+| File | Upstream asset |
 | --- | --- |
 | `cat-basic.svg` | `Options/SVG/ic_fluent_options_24_regular.svg` |
 | `cat-audio.svg` | `Speaker 2/SVG/ic_fluent_speaker_2_24_regular.svg` |
@@ -28,9 +25,9 @@ MIT License, Copyright (c) 2020 Microsoft Corporation.
 | `tb-display.svg` | `Desktop/SVG/ic_fluent_desktop_24_regular.svg` |
 | `tb-settings.svg` | `Settings/SVG/ic_fluent_settings_24_regular.svg` |
 
-串流菜单复用这套资源，新增以下上游 24px Regular 图标（同样仅将填色改为白色）：
+The streaming menu uses the same resources, plus these upstream 24 px Regular icons. Their fills are also changed to white:
 
-| 文件 | 上游资源 |
+| File | Upstream asset |
 | --- | --- |
 | `menu-position.svg` | `Pin/SVG/ic_fluent_pin_24_regular.svg` |
 | `menu-bitrate.svg` | `Data Usage/SVG/ic_fluent_data_usage_24_regular.svg` |
