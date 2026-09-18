@@ -1,33 +1,30 @@
-# 提交 Checklist —— 什么能进 PR,什么不能
+# Contribution checklist
 
-> 公开仓库面向所有人(含竞争对手与爬虫)。**拿不准的就不提交**,问维护者。
+This is a public repository. Review the staged changes for private information before submitting a pull request. If a file's suitability is unclear, ask a maintainer.
 
-## ✅ 可以提交
+## Suitable contributions
 
-- 代码、测试、构建脚本(qmake/.pro、CMake、CI workflow)
-- 技术文档:docs/ 下的设计文档、SOP、架构说明
-- vendored 依赖变更(submodule 指针、补丁、钉值;需与上游测试组合对齐)
-- 修复明确问题、有复现方式的本地工具脚本(scripts/)
-- 翻译与文案
+- Source code, tests, and build scripts, including qmake projects, CMake files, and CI workflows.
+- Technical documentation in `docs/`: designs, operating procedures, and architecture notes.
+- Vendored dependency changes, submodule revisions, patches, and version pins that match a tested dependency combination.
+- Local tools in `scripts/` that address a specific, reproducible problem.
+- Translations and interface text.
 
-## ❌ 禁止提交
+## Keep out of the repository
 
-- **业务与商业资料**:项目包、客户与部署文档、商务与运营材料 →
-  放本地 `projects/`(已 gitignore),永不入库
-- **密钥与凭据**:证书、token、密码、SSH key、`.env`;「示例里顺手填的真实值」也算
-- **内网信息**:内网域名 / IP 段、网络拓扑、服务器清单、端口约定
-- **本机环境**:IDE 与 agent 目录、`build/`、`libs/`、个人绝对路径
-- **大文件与构建产物**:二进制、调试 dump、日志、Makefile/.o(曾毒化过构建)
+- Business materials, customer or deployment documents, project bundles, and commercial or operational records. Store local materials under the ignored `projects/` directory.
+- Secrets and credentials: certificates, tokens, passwords, SSH keys, and `.env` files. Real values in examples are still credentials.
+- Private network details: internal domains, address ranges, network diagrams, server inventories, and deployment-specific port conventions.
+- Local environment files: IDE and agent directories, `build/`, `libs/`, and personal absolute paths.
+- Build artifacts and large generated files: binaries, dumps, logs, Makefiles, and object files.
 
-## 提交前 30 秒自检
+## Before submitting
 
-1. `git status` —— 新增文件清单里有没有「不该在这」的东西?
-2. 对暂存内容 grep 一遍敏感词:
-   `git diff --staged | grep -iE "token|secret|password|foundation|基地|内网|192\.168|10\."`
-3. 单文件超过 1 MB?停下确认不是产物或资料包。
-4. 文档里出现具体客户名 / 项目代号 / 服务器名?→ 移到本地 projects/ 或删掉。
+1. Check `git status` for files that do not belong in the change.
+2. Read `git diff --staged`, including any new documentation, and check for tokens, secrets, passwords, private addresses, and deployment details. A keyword search is useful but does not replace reviewing the diff.
+3. Review any file larger than 1 MB to ensure it is a source asset rather than a generated artifact or document bundle.
+4. Remove specific customer names, private project identifiers, and server names, or move the document to local `projects/` storage.
 
-## 历史案例
+## Background
 
-- 2026-09-18:一批业务项目材料曾误入 PR,发现后重写分支移除。
-  `projects/` 因此整目录 gitignore —— 该目录下的东西**设计上就不进仓库**。
+On September 18, 2026, business project materials were accidentally included in an upstream pull request and removed by rewriting the branch. The entire `projects/` directory is therefore intentionally ignored.

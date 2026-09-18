@@ -2,9 +2,8 @@ import QtQuick 2.9
 import QtQuick.Controls
 import "."
 
-// 中括号跳转链：等宽 + accent + [ ] 包裹，悬停提亮加下划线。导航入口
-// 不占用按钮语言，「下载」等真正动作仍走 HardButton。高度与 HardButton
-// 一致(34)，保证相邻混排时垂直对齐。
+// Monospaced accent navigation link in brackets, brighter and underlined on hover.
+// Keep actual actions as HardButton; matching 34-pixel heights align mixed rows.
 Button {
     id: control
 
@@ -34,7 +33,7 @@ Button {
         border.color: Theme.accent
     }
 
-    // 只改光标不接事件，点击仍由 Button 处理
+    // Change only the pointer cursor; Button continues handling clicks.
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.NoButton

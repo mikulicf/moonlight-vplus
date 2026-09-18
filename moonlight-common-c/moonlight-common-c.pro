@@ -97,12 +97,10 @@ CONFIG(debug, debug|release) {
     DEFINES += LC_DEBUG
 }
 
-# common-c (mic 线) 使用 C11 <stdatomic.h>,旧默认标准下 MSVC 直接 #error、
-# GCC gnu99 亦不可靠,统一提到 C11
-# win32-msvc scope 匹配不到 ARM64 交叉的 win32-arm64-msvc spec,
-# 用 QMAKE_COMPILER 覆盖全部 MSVC 目标(x64/arm64)
+# The microphone extensions use C11 stdatomic.h. Enable C11 consistently.
+# QMAKE_COMPILER matches both x64 and ARM64 MSVC specs, unlike win32-msvc alone.
 contains(QMAKE_COMPILER, msvc) {
-    # MSVC 的 C11 原子是实验特性(VS 2022 17.5+),除 /std:c11 外必须显式开启
+    # MSVC's experimental C11 atomics (VS 2022 17.5+) require this in addition to /std:c11.
     QMAKE_CFLAGS += /std:c11 /experimental:c11atomics
 }
 

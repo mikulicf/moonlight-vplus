@@ -2,24 +2,21 @@ import QtQuick 2.9
 import QtQuick.Controls
 import "."
 
-// 方角勾选框。只覆盖 indicator，文字排布/换行继续走基类，
-// 免得设置页里那些长说明文字的换行行为被改坏。
+// Override only the checkbox indicator, preserving base text layout and wrapping
+// for long descriptions in settings.
 CheckBox {
     id: control
 
     font.family: Theme.fontSans
 
-    // 关掉 FluentWinUI3 那圈白色圆角双环，焦点改用下面的方角 FocusRing。
+    // Replace FluentWinUI3's rounded focus rings with the square FocusRing below.
     readonly property Item __focusFrameTarget: null
 
-    // 自管指针路径要走的切换。不用 AbstractButton.click()：那个方法是 Qt 6.8 才有的
-    // （QtQuick.Templates 的 qmltypes 里 click 标着 revision 1544 = 6×256+8），而
-    // README 里我们还留着「Qt 5.12 或更新版本仍保留兼容」，Steam Link 那条工具链的
-    // Qt 更早，调用它会直接是 TypeError。HardSwitch 早就绕开了，这里一直漏着。
+    // Implement pointer toggling without AbstractButton.click(), introduced in Qt 6.8.
+    // Older Qt toolchains, including Steam Link, cannot call it.
     //
-    // toggled() 只在真的换了状态时发，clicked() 照发 —— 让这条自管路径和基类点
-    // 标签文字时的那条路径行为一致（目前 25 个使用点全都只接 onCheckedChanged，
-    // 但别给以后的调用方留坑）。
+    // Emit toggled() only when state changes, but always emit clicked(), matching
+    // the base label-click path for current and future callers.
     function commitPointerToggle() {
         if (!control.enabled) {
             return
@@ -47,8 +44,8 @@ CheckBox {
                     : (control.hovered ? Theme.accent : Theme.lineStrong)
         opacity: control.enabled ? 1.0 : 0.45
 
-        // 勾选态本身就是 accent 填充 + accent 描边，这圈边框腾不出来表达焦点，
-        // 所以焦点走外挂环。只有键盘/手柄带来的焦点才画，鼠标点一下不该冒出个框。
+        // Checked state already uses an accent border/fill, so show keyboard/gamepad
+        // focus with an external ring. Mouse clicks should not display it.
         FocusRing {
             visible: control.visualFocus
         }
@@ -72,8 +69,8 @@ CheckBox {
             ColorAnimation { duration: Theme.durFast }
         }
 
-        // 勾用两条旋转的实心线拼出来，不用字体里的 ✓：字体回退时那个字形的
-        // 大小和基线都不可控，而 Canvas 在 visible 翻转时不保证重绘。
+        // Construct the checkmark from rotated solid lines rather than a fallback-font
+        // glyph or Canvas, whose repaint on visibility changes is not guaranteed.
         Item {
             anchors.fill: parent
             opacity: control.checked ? 1 : 0

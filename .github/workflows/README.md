@@ -1,124 +1,47 @@
-# GitHub Actions 工作流说明
+# GitHub Actions workflows
 
-本项目使用 GitHub Actions 进行自动化构建和部署。
+GitHub Actions builds and tests this fork, compiles translation resources, and reports updates from both upstream projects.
 
-## 工作流概述
+## Main build: `build.yml`
 
-### 主构建工作流 (`build.yml`)
+Triggers are pushes and pull requests targeting `master` or `main`, published releases, and manual workflow dispatches.
 
-**触发条件：**
-- 推送到 `master` 或 `main` 分支
-- 创建 Pull Request
-- 发布 Release
+| Platform | Build environment | Output |
+|---|---|---|
+| Windows x64 and ARM64 | Visual Studio 2022, Qt 6.11.1 | Portable packages and universal installer |
+| macOS | macOS 15 runner, Xcode, Qt 6.11.1, Node.js/create-dmg | DMG |
+| Linux x86_64 and aarch64 | Ubuntu runners, Qt 6.11.1 | AppImage |
+| SteamLink | Valve SteamLink SDK cross-compilation | SteamLink package |
 
-**支持平台：**
-- Windows (x64/ARM64) - 使用 Qt 6.11.1
-- macOS - 使用 Qt 6.11.1
-- Linux (x86_64 / aarch64) - 使用 Qt 6.11.1
-- SteamLink - 交叉编译
+Artifact names contain the version derived by `scripts/derive-version.py`. Refer to the upload steps for exact names. Windows packaging also emits the historical `MoonlightPortable-*` and `MoonlightSetup-*` release aliases for clients upgrading across the V+ branding change.
 
-**构建产物：**
-- Windows: `Moonlight-VPlus-Portable-{arch}-r{build_number}.zip`
-- macOS: `Moonlight-VPlus-r{build_number}.dmg`
-- Linux: `Moonlight-VPlus-r{build_number}-{arch}.AppImage`
-- SteamLink: `Moonlight-VPlus-SteamLink-r{build_number}.zip`
+The independent checks cover version derivation, both-upstream reporting, QML type resolution, and formatting of changed C++ lines. Platform jobs run the applicable tests listed in [tests/README.md](../../tests/README.md).
 
-首个 V+ 品牌版本还会同时发布 `MoonlightPortable-*` 和 `MoonlightSetup-*`
-兼容别名，保证旧版 Windows 客户端能完成跨品牌升级。
+Windows deploys the Qt runtime dependencies and generates debugging symbols. macOS packaging also builds the USB forwarding helper. Linux builds pinned SDL3, sdl2-compat, SDL2_ttf, libva, dav1d, libplacebo, and FFmpeg dependencies before packaging the application. SteamLink uses its separate SDK and toolchain.
 
-## 平台特定配置
+## Run and inspect builds
 
-### Windows 构建
-- 使用 Visual Studio 2022
-- 支持 x64 和 ARM64 架构
-- 自动处理 Qt 依赖部署
-- 生成调试符号包
+Open the repository's Actions tab, select **Build Moonlight V+ for PC**, and use **Run workflow** for a branch build. Pull requests and pushes to the configured branches trigger it automatically. Each run provides per-job logs and downloadable artifacts.
 
-### macOS 构建
-- 使用 macOS 14 (Sonoma)
-- 生成 DMG 安装包
-- 需要 Node.js 和 create-dmg
+Publishing a release builds and uploads the platform packages. A manual dispatch can replace assets for an existing version tag when `publish_release` is enabled; review that option before using it. Release uploads use the repository's `GH_BOT_TOKEN` secret. Ordinary build and test jobs do not require that secret.
 
-### Linux 构建
-- 使用 Ubuntu 22.04
-- 编译多个依赖库：SDL2, SDL2_ttf, libva, dav1d, libplacebo, FFmpeg
-- 智能检测 Wayland 支持
-- 生成 AppImage 格式
+## Translation resources: `build-translate.yml`
 
-### SteamLink 构建
-- 使用 Valve SteamLink SDK
-- 交叉编译为 ARM 架构
+Pushes to `master` and manual dispatches compile the language resources with the matching Windows Qt version. The workflow stages only `app/languages/*.qm`, commits updated catalogs when needed, and pushes them back. It requires repository contents-write permission. The interface defaults to English while retaining optional language packs.
 
-## 使用说明
+## Upstream report: `upstream-status.yml`
 
-### 自动构建
-每次推送代码或创建 PR 时，会自动触发构建。
+This read-only workflow runs each Monday at 01:23 UTC and on manual dispatch. It tests the reporting script, fetches V+ and original Moonlight, and saves the report in the job summary and an artifact. It does not merge or publish code. See [the upstream procedure](../../docs/upstream-sync.md).
 
-### 发布版本
-在 GitHub 上创建新的 Release 时，会自动构建并上传所有平台的构建产物。
+## Maintenance and troubleshooting
 
-### 查看构建状态
-- 在仓库主页查看构建状态
-- 在 Actions 页面查看详细日志
-- 构建产物在 Artifacts 部分下载
+- **Windows timeouts:** inspect the logs for a waiting `Terminate batch job (Y/N)?` prompt. Build scripts clean conflicting environment variables and limit parallelism to control memory use.
+- **Missing Linux packages:** check the selected runner's package names and optional Wayland support. A package name valid on another Ubuntu release may differ.
+- **Qt installation failures:** keep the Qt version and required modules consistent between jobs. Windows uses the naqt installer path; the other jobs pin a compatible aqtinstall revision to read the Qt 6.11.1 repository metadata.
+- **Dependency failures:** inspect the failing download or compile step and its pinned revision. Do not assume an optional dependency failure explains a later application error.
+- **Formatting failures:** use clang-format 21.1.8 and format the changed lines. Avoid formatting the entire inherited source tree, which makes upstream merges harder.
+- **QML failures:** check the independent type-resolution job even when native compilation succeeds; unresolved QML types can otherwise fail only at runtime.
 
-## 故障排除
+Qt installations are cached where configured. Linux uses a bounded ccache across runs. The SteamLink SDK uses a weekly cache key and refreshes an older restored checkout before saving it. Dependency revisions remain explicitly pinned; caching does not select their versions.
 
-### 常见问题
-
-1. **Windows 构建超时**：
-   - 检查是否有 "Terminate batch job (Y/N)?" 提示
-   - 构建脚本会自动清理环境变量避免冲突
-
-2. **Linux 包缺失**：
-   - 确保使用正确的包名（Ubuntu 22.04）
-   - Wayland 包会自动检测，不可用时会跳过
-
-3. **Qt 版本问题**：
-   - Windows/macOS 使用 Qt 6.x
-   - Linux 使用 CI 安装的 Qt 6.x
-
-4. **依赖库构建失败**：
-   - 检查网络连接（需要下载源码）
-   - 某些可选依赖失败不会影响主构建
-
-### 环境要求
-
-- **Windows**: Visual Studio 2022, Qt 6.11.1
-- **macOS**: Xcode, Qt 6.11.1, Node.js
-- **Linux**: 完整的开发环境，Qt 6.11.1
-- **所有平台**: Git, 网络访问
-
-### 密钥配置
-
-需要在仓库设置中配置：
-- `GH_BOT_TOKEN`: GitHub 个人访问令牌（用于 Release 上传）
-
-## 自定义配置
-
-### 修改 Qt 版本
-编辑工作流文件中的 `install-qt-action` 版本参数。
-
-### 添加新平台
-在 `strategy.matrix` 中添加新的配置组合。
-
-### 修改构建脚本
-更新对应平台的构建步骤或脚本文件。
-
-## 技术细节
-
-### 构建缓存
-- Qt 安装使用缓存加速
-- 依赖库编译结果不缓存（确保最新版本）
-
-### 并行构建
-- Windows: 自动检测并行度
-- Linux: 使用 `$(nproc)` 自动检测
-- macOS: 默认并行构建
-
-### 错误处理
-- 自动重试机制
-- 详细的错误日志
-- 优雅的失败处理
-
-这个工作流设计为开箱即用，无需额外配置即可在 GitHub Actions 中运行。
+To change Qt versions, update the matching installation steps and confirm all supported platforms still build. To add an architecture, extend the relevant matrix or job and its packaging steps. Use each platform's existing parallel-build controls rather than a fixed assumption about runner CPU count. Local builds require Git, network access for dependencies, and the compiler/SDK and Qt version appropriate to the platform.

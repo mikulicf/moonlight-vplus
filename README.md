@@ -1,85 +1,91 @@
 # Moonlight V+ for PC
 
-[English](README.en.md)
+This is the independently maintained [mikulicf fork](https://github.com/mikulicf/moonlight-vplus) of [Moonlight V+](https://github.com/qiin2333/moonlight-qt), built on [Moonlight Qt](https://github.com/moonlight-stream/moonlight-qt). The interface defaults to English, background downloads are opt-in, and streaming controls follow the active stream window. Optional language packs remain available.
 
-[![Build](https://img.shields.io/github/actions/workflow/status/qiin2333/moonlight-qt/build.yml?branch=master)](https://github.com/qiin2333/moonlight-qt/actions/workflows/build.yml?query=branch%3Amaster)
-[![Downloads](https://img.shields.io/github/downloads/qiin2333/moonlight-qt/total)](https://github.com/qiin2333/moonlight-qt/releases)
+See [external services and dependencies](docs/external-services.md) and [tracking both upstreams](docs/upstream-sync.md).
 
-Moonlight V+ for PC 是基于 [moonlight-stream/moonlight-qt](https://github.com/moonlight-stream/moonlight-qt) 维护的增强版桌面客户端，面向搭配 [Foundation Sunshine](https://github.com/qiin2333/Sunshine) 使用的桌面串流场景。
+[Documentation](docs/architecture.md)
 
-它继续兼容上游 Moonlight / 标准 Sunshine，同时进一步完善 Foundation Sunshine 的客户端体验：能力协商更明确，画质与性能控制更细，串流中的常用操作效率更高。
+[![Build](https://img.shields.io/github/actions/workflow/status/mikulicf/moonlight-vplus/build.yml?branch=master)](https://github.com/mikulicf/moonlight-vplus/actions/workflows/build.yml?query=branch%3Amaster)
+[![Downloads](https://img.shields.io/github/downloads/mikulicf/moonlight-vplus/total)](https://github.com/mikulicf/moonlight-vplus/releases)
 
-## 下载
+Moonlight V+ for PC is an enhanced desktop client based on [moonlight-stream/moonlight-qt](https://github.com/moonlight-stream/moonlight-qt), designed to work closely with [Foundation Sunshine](https://github.com/qiin2333/Sunshine).
 
-推荐从 [GitHub Releases](https://github.com/qiin2333/moonlight-qt/releases) 下载 Windows、macOS、Linux AppImage 和 Steam Link 构建产物。
+It remains compatible with upstream Moonlight and standard Sunshine hosts, while improving the Foundation Sunshine desktop experience with clearer capability negotiation, finer quality/performance controls, and more efficient in-stream actions.
 
-> **macOS 目前只提供 Apple Silicon（arm64）构建**，资产名形如 `Moonlight-VPlus-<版本>-arm64.dmg`。Intel Mac 需要自行按下面「从源码构建」的步骤编译。
+## Downloads
+
+Download Windows, macOS, Linux AppImage, and Steam Link builds from [GitHub Releases](https://github.com/mikulicf/moonlight-vplus/releases).
+
+> **macOS currently ships Apple Silicon (arm64) builds only**, named like `Moonlight-VPlus-<version>-arm64.dmg`.
+> Intel Mac users need to build from source using the instructions below.
 >
-> **Linux AppImage 提供 x86_64 和 aarch64 两份**，资产名形如 `Moonlight-VPlus-<版本>-x86_64.AppImage` / `Moonlight-VPlus-<版本>-aarch64.AppImage`。x86_64 在 Ubuntu 22.04 上构建（glibc >= 2.35），aarch64 在 Ubuntu 24.04 上构建（glibc >= 2.39，因此 Debian 12 / Raspberry Pi OS bookworm 用不了，需要 trixie 或更新）。
+> **Linux AppImages are available for x86_64 and aarch64**, named like `Moonlight-VPlus-<version>-x86_64.AppImage` and `Moonlight-VPlus-<version>-aarch64.AppImage`.
+> The x86_64 package is built on Ubuntu 22.04 and requires glibc 2.35 or later. The aarch64 package is built on Ubuntu 24.04 and requires glibc 2.39 or later, so Debian 12 and Raspberry Pi OS Bookworm cannot run it; use Trixie or a newer compatible distribution.
 
-如果你需要上游 Moonlight 的官方发行渠道、移动端客户端、Flatpak、Snap 或发行版软件源，请参考 [Moonlight 官方网站](https://moonlight-stream.org) 和 [上游仓库](https://github.com/moonlight-stream/moonlight-qt)。这些渠道不一定包含 Moonlight V+ for PC 与 Foundation Sunshine 配套的扩展能力。
+For upstream Moonlight distribution channels, mobile clients, Flatpak, Snap, or distro packages, see the [Moonlight website](https://moonlight-stream.org) and the [upstream repository](https://github.com/moonlight-stream/moonlight-qt). Those builds may not include the Foundation Sunshine extensions maintained in Moonlight V+ for PC.
 
-## Foundation Sunshine 协同
+## Foundation Sunshine Integration
 
-Foundation Sunshine 是 Moonlight V+ for PC 的主要服务端配套项目。客户端会在连接时探测服务端能力；当服务端支持对应扩展时启用增强协议，不支持时回退到标准 Moonlight / Sunshine 行为。
+Foundation Sunshine is the primary server counterpart for Moonlight V+ for PC. The client probes host capabilities during connection setup; enhanced protocols are enabled only when the server advertises support, and standard Moonlight / Sunshine behavior is used otherwise.
 
-这意味着你可以把它当作普通 Moonlight 客户端使用，也可以在 Foundation Sunshine 主机上获得更完整的剪贴板、音频输入、显示控制、码率控制和文件夹映射体验。扩展能力不可用时，客户端会回退到标准兼容行为。
+You can use it like a regular Moonlight client, or pair it with a Foundation Sunshine host for richer clipboard, audio input, display control, bitrate control, and folder-mapping behavior. When an extension is unavailable, the client falls back to standard compatible behavior.
 
-## 主要增强
+## Key Enhancements
 
-### 协议与串流能力
+### Protocol And Streaming
 
-- **双向剪贴板同步**：支持文本与 PNG 图像在客户端和 Foundation Sunshine 主机之间同步，并兼容常见浏览器与系统剪贴板格式。
-- **高品质麦克风**：基于 `moonlight-common-c` 的麦克风扩展，支持持续音频输入链路和多声道场景。
-- **远程分辨率解耦**：允许串流分辨率独立于本地显示器分辨率，并支持自定义远程分辨率和帧率。
-- **AppView 显示控制**：支持目标显示器、虚拟屏组合、远程分辨率和远程帧率选择，让客户端和 Foundation Sunshine 对齐同一套显示意图。
-- **文件夹映射 / 主机文件访问**：面向 Foundation Sunshine 的文件夹映射能力，提供串流中访问主机共享文件的客户端入口，并保留跨平台挂载实现。
+- **Bidirectional clipboard sync**: supports text and PNG image sync between the client and Foundation Sunshine host, including common browser and native clipboard formats.
+- **High-quality microphone forwarding**: uses the microphone extension in `moonlight-common-c` for continuous audio input and multichannel scenarios.
+- **Remote resolution decoupling**: stream resolution can be independent from the local display resolution, with custom remote resolution and frame-rate controls.
+- **AppView display control**: supports target display selection, virtual display groups, remote resolution, and remote frame-rate preferences so the client and Foundation Sunshine share the same display intent.
+- **Folder mapping / host file access**: exposes Foundation Sunshine folder-mapping features in the client, including in-stream access to shared host files and cross-platform mount support.
 
-### 画质与性能
+### Quality And Performance
 
-- **Sunshine ABR**：在服务端支持时，Foundation Sunshine 可根据客户端反馈动态调整会话码率，在清晰度和稳定性之间取得更合理的平衡。
-- **高码率局域网串流**：保留面向 Sunshine 主机的高码率选项，适合有线局域网、桌面串流和高分辨率画面。
-- **硬件解码与现代视频格式**：继承上游 Moonlight 的硬解能力，支持 H.264、HEVC、AV1、HDR 和 YUV 4:4:4 等能力组合，具体可用性取决于客户端 GPU 与服务端编码能力。
-- **帧节奏与延迟控制**：保留 V-Sync、frame pacing、全屏/无边框窗口等选项，方便在低延迟、顺滑度和桌面工作流之间取舍。
-- **性能覆盖层**：展示实时串流指标，并补充渲染时间等观测信息，让串流调优更可量化。
+- **Sunshine ABR**: when supported by the host, Foundation Sunshine can adjust session bitrate dynamically from client feedback, balancing clarity and stability more effectively.
+- **High-bitrate LAN streaming**: keeps Sunshine-oriented high-bitrate controls for wired LAN, desktop streaming, and high-resolution sessions.
+- **Hardware decoding and modern video formats**: inherits upstream Moonlight hardware decoding support, including H.264, HEVC, AV1, HDR, and YUV 4:4:4 combinations depending on the client GPU and host encoder.
+- **Frame pacing and latency controls**: keeps V-Sync, frame pacing, fullscreen, and borderless-window choices for tuning latency, smoothness, and desktop workflows.
+- **Performance overlay**: exposes real-time stream metrics with additional render-time visibility, making stream tuning more measurable.
 
-### 客户端体验
+### Client Experience
 
-- **Win11 风格悬浮菜单**：包含动画、图标和可选浮动月亮按钮。
-- **悬浮菜单快捷控制**：串流中可快速切换全屏、性能统计、鼠标模式、光标显示、麦克风、主机文件访问等常用动作。
-- **手柄体验增强**：可配置退出组合键，支持手柄鼠标即时切换，并在有手柄时展示相关选项，减少无关设置干扰。
-- **远程桌面鼠标模式**：保留游戏指针捕获和远程桌面直接鼠标控制两种模式，适合游戏、桌面办公和轻量维护场景。
-- **串流时自动禁用 IME**：Windows 下基于 Win32 IMM hooks 降低输入法干扰，提升键盘输入稳定性。
-- **AppView 信息展示**：应用列表中展示运行状态和显示器选项，帮助用户更明确地选择要启动的位置。
+- **Windows 11 style floating menu** with animation, icons, and an optional floating moon button.
+- **Floating menu quick controls** for fullscreen, performance stats, mouse mode, cursor visibility, microphone, host file access, and other common in-stream actions.
+- **Gamepad improvements** including configurable quit combos, instant gamepad/mouse switching, and context-aware settings visibility to reduce unrelated settings noise.
+- **Remote desktop mouse mode** alongside game-style pointer capture, covering games, desktop work, and quick maintenance sessions.
+- **Automatic IME suppression while streaming** on Windows via Win32 IMM hooks to improve keyboard input stability.
+- **AppView presentation** for running state and display options, making it clearer where a session will launch.
 
-### 自动化与发布
+### Automation And Releases
 
-- **Moonlight V+ 更新检查**：客户端更新检查指向 `qiin2333/moonlight-qt` 的 GitHub Releases。
-- **基于 Git tag 的版本号**：`scripts/derive-version.py` 支持 CI 与本地构建产物使用一致的版本命名。
-- **自动翻译构建**：`.github/workflows/build-translate.yml` 用于周期性更新 `.ts` / `.qm` 翻译资源。
-- **CI 构建矩阵**：Windows、macOS、Linux AppImage 和 Steam Link 均有独立工作流维护。
+- **Fork-specific update checks** using GitHub Releases from `mikulicf/moonlight-vplus`.
+- **Git tag based versioning** through `scripts/derive-version.py`, keeping CI and local artifact names consistent.
+- **Automated translation build** via `.github/workflows/build-translate.yml` for `.ts` / `.qm` resources.
+- **CI build matrix** for Windows, macOS, Linux AppImage, and Steam Link artifacts.
 
-## 兼容性
+## Compatibility
 
-- 标准 Moonlight / Sunshine 协议保持兼容，普通主机不需要额外配置。
-- 连接标准 Sunshine 或上游 Moonlight 兼容服务端时，剪贴板图片、HQ Mic、ABR、文件夹映射等 Foundation 扩展会自动降级或关闭。
-- NVIDIA GameStream 相关兼容性继承自上游 Moonlight，但新功能主要围绕 Sunshine 生态维护。
+- The standard Moonlight / Sunshine protocol remains compatible, so regular hosts do not need extra setup.
+- When connected to standard Sunshine or another upstream-compatible host, Foundation extensions such as image clipboard, HQ Mic, ABR, and folder mapping gracefully downgrade or stay disabled.
+- NVIDIA GameStream compatibility is inherited from upstream Moonlight, but new development in Moonlight V+ for PC is primarily focused on the Sunshine ecosystem.
 
-## 构建
+## Building
 
-### 通用步骤
+### Common Setup
 
 ```powershell
 git submodule update --init --recursive
 ```
 
-Windows 和 macOS 构建前还需要安装预构建依赖：
+Windows and macOS builds also need prebuilt dependencies:
 
 ```powershell
 .\setup-deps.ps1
 ```
 
-macOS 可使用：
+On macOS, use:
 
 ```bash
 python3 setup-deps.py
@@ -87,29 +93,31 @@ python3 setup-deps.py
 
 ### Windows
 
-要求：
+Requirements:
 
-- Qt 6 SDK，建议使用与 CI 接近的 Qt 6.11.x。
-- Visual Studio 2022，使用 MSVC 工具链。
-- 生成面向普通用户的安装包时需要 7-Zip。
-- 调试 DirectX 相关问题时可安装 Windows Graphics Tools。
+- Qt 6 SDK, preferably close to the Qt 6.11.x version used by CI.
+- Visual Studio 2022 with the MSVC toolchain.
+- 7-Zip when building user-facing installers.
+- Windows Graphics Tools when debugging DirectX-related issues.
 
-常用 release 构建脚本：
+Common release build scripts:
 
 ```cmd
-scripts\build-arch.bat x64 release
+scripts\build-arch.bat release x64
 scripts\generate-bundle.bat
 ```
 
 ### macOS
 
-要求：
+Requirements:
 
-- Qt 6 SDK，建议使用与 CI 接近的 Qt 6.11.x。
-- Xcode 14 或更新版本。
-- 生成 DMG 时需要 `create-dmg`。
+- Qt 6 SDK, preferably close to the Qt 6.11.x version used by CI.
+- Xcode 14 or later.
+- `create-dmg` when producing DMG artifacts.
 
-常用构建命令：
+DMG packaging also builds the USB helper, which requires Xcode 16 or later, CMake 3.24 or later, and `pkg-config`; see [usb-helper/README.md](usb-helper/README.md).
+
+Common build commands:
 
 ```bash
 qmake6 moonlight-qt.pro
@@ -119,20 +127,20 @@ scripts/generate-dmg.sh
 
 ### Linux
 
-要求：
+Requirements:
 
-- 推荐 Qt 6；Qt 5.12 或更新版本仍保留兼容。
-- GCC 或 Clang。
-- FFmpeg 4.0 或更新版本。
-- Vulkan renderer 需要 `libplacebo` 至少 v7.349.0，并建议 FFmpeg 6.1 或更新版本。
+- Qt 6 is recommended; Qt 5.12 or later remains supported.
+- GCC or Clang.
+- FFmpeg 4.0 or later.
+- The Vulkan renderer requires `libplacebo` v7.349.0 or later, and FFmpeg 6.1 or later is recommended.
 
-Debian / Ubuntu 依赖示例：
+Example Debian / Ubuntu dependencies:
 
 ```bash
 sudo apt install libegl1-mesa-dev libgl1-mesa-dev libopus-dev libsdl2-dev libsdl2-ttf-dev libssl-dev libavcodec-dev libavformat-dev libswscale-dev libva-dev libvdpau-dev libxkbcommon-dev wayland-protocols libdrm-dev qt6-base-dev qt6-declarative-dev libqt6svg6-dev qt6-wayland
 ```
 
-开发构建：
+Development build:
 
 ```bash
 qmake6 moonlight-qt.pro
@@ -141,45 +149,45 @@ make debug
 
 ### Steam Link
 
-要求：
+Requirements:
 
-- 克隆 [Steam Link SDK](https://github.com/ValveSoftware/steamlink-sdk)。
-- 设置 `STEAMLINK_SDK_PATH` 环境变量。
+- Clone the [Steam Link SDK](https://github.com/ValveSoftware/steamlink-sdk).
+- Set the `STEAMLINK_SDK_PATH` environment variable.
 
-构建：
+Build:
 
 ```bash
 scripts/build-steamlink-app.sh
 ```
 
-Steam Link 原始硬件限制：
+Original Steam Link hardware limits:
 
-- 最大分辨率 1080p。
-- 最大帧率 60 FPS。
-- 最大视频码率 40 Mbps。
-- 不支持 HDR 串流。
+- Maximum resolution: 1080p.
+- Maximum frame rate: 60 FPS.
+- Maximum video bitrate: 40 Mbps.
+- HDR streaming is not supported.
 
-## 贡献
+## Contributing
 
-Moonlight V+ for PC 的改动优先围绕 Foundation Sunshine 协同能力、桌面客户端体验、中文本地化和跨平台构建稳定性展开。
+Moonlight V+ for PC prioritizes Foundation Sunshine integration, desktop client experience, English documentation, and cross-platform build stability.
 
-提交 issue 或 PR 时，请尽量说明：
+When opening an issue or pull request, please include:
 
-- 客户端系统和版本。
-- Foundation Sunshine 或标准 Sunshine 的版本。
-- 是否使用 Moonlight V+ for PC 的 release 构建。
-- 是否涉及扩展能力，例如剪贴板、HQ Mic、ABR、文件夹映射或远程分辨率。
+- Client operating system and version.
+- Foundation Sunshine or standard Sunshine version.
+- Whether you are using a Moonlight V+ for PC release build.
+- Whether the report involves an extension such as clipboard sync, HQ Mic, ABR, folder mapping, or remote resolution handling.
 
-## 上游与许可
+## Upstream And License
 
-本项目基于 [Moonlight Qt](https://github.com/moonlight-stream/moonlight-qt)，遵循仓库内 [GPLv3 License](LICENSE)。
+This project is based on [Moonlight Qt](https://github.com/moonlight-stream/moonlight-qt) and follows the [GPLv3 License](LICENSE) included in this repository.
 
-上游 Moonlight 项目链接：
+Upstream Moonlight links:
 
-- [Moonlight 官网](https://moonlight-stream.org)
+- [Moonlight website](https://moonlight-stream.org)
 - [Moonlight Qt](https://github.com/moonlight-stream/moonlight-qt)
-- [Moonlight 文档](https://github.com/moonlight-stream/moonlight-docs/wiki)
+- [Moonlight documentation](https://github.com/moonlight-stream/moonlight-docs/wiki)
 - [Moonlight Discord](https://moonlight-stream.org/discord)
 - [Moonlight Weblate](https://hosted.weblate.org/projects/moonlight/moonlight-qt/)
 
-感谢 Moonlight、Sunshine 以及相关开源依赖项目的长期维护。
+Thanks to the Moonlight, Sunshine, and related open-source dependency maintainers.

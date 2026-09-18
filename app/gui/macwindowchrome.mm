@@ -6,8 +6,8 @@
 namespace
 {
 
-// 红绿灯距窗口左边的留白。main.qml 里工具栏的 windowButtonInsetLeft 是按
-// 「这个值 + 整组 60pt 宽 + 一格间距」算出来的，两边要一起改。
+// Left margin for native window controls. Keep main.qml's windowButtonInsetLeft
+// synchronized with this margin, the 60-point control group, and its spacing.
 const CGFloat kButtonLeftMargin = 20;
 const void* kTitleBarObserverTokensKey = &kTitleBarObserverTokensKey;
 
@@ -21,13 +21,11 @@ void removeTitleBarObservers(NSWindow* window)
     objc_setAssociatedObject(window, kTitleBarObserverTokensKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
-// 把系统标题栏那条带子拉高到 barHeight，并让红绿灯在新高度里垂直居中。
+// Extend the titlebar container to barHeight and center its controls vertically.
 //
-// 这里动的是 standardWindowButton 的 superview 链：
-//   NSButton（红绿灯） → NSTitlebarView → NSTitlebarContainerView → 窗口的 frame view
-// 这套层级从 10.10 一直稳定到现在，是各家做「高标题栏」的通用做法，但毕竟不是公开
-// API，所以每一步都做了判空，拿不到就原样返回、什么都不改（最坏情况是红绿灯留在
-// 最上面那条，功能不受影响）。
+// Follow standardWindowButton's superviews: NSButton -> NSTitlebarView ->
+// NSTitlebarContainerView -> frame view. This private hierarchy has been stable since
+// macOS 10.10, but guard every step and leave the native layout unchanged if unavailable.
 void applyTallTitleBar(NSWindow* window, CGFloat barHeight)
 {
     if (window == nil) {
@@ -50,7 +48,7 @@ void applyTallTitleBar(NSWindow* window, CGFloat barHeight)
         return;
     }
 
-    // 带子贴着窗口顶边，所以拉高的同时要把原点往下挪同样的量
+    // Keep the container at the window's top edge by lowering its origin as height grows.
     NSRect containerFrame = container.frame;
     if (containerFrame.size.height < barHeight) {
         CGFloat delta = barHeight - containerFrame.size.height;
@@ -59,21 +57,19 @@ void applyTallTitleBar(NSWindow* window, CGFloat barHeight)
         container.frame = containerFrame;
     }
 
-    // 里面那层 NSTitlebarView 也铺满容器。实测只拉容器就已经能把按钮居中了，
-    // 但两层高度对不上时 AppKit 在窗口尺寸变化后重新布局的结果不好预料，
-    // 顺手对齐，省得留一个只在特定版本成立的巧合。
+    // Match the inner NSTitlebarView to its container so later AppKit relayouts
+    // do not depend on mismatched heights or version-specific behavior.
     NSRect titleBarFrame = titleBarView.frame;
     titleBarFrame.origin.y = 0;
     titleBarFrame.size.height = barHeight;
     titleBarView.frame = titleBarFrame;
 
-    // 三颗按钮垂直居中，并整组右移到 kButtonLeftMargin。
+    // Center all three buttons vertically and shift the group to kButtonLeftMargin.
     //
-    // 系统默认把第一颗放在 x=9（实测三颗分别在 9 / 32 / 55，各 14×14，整组占 9..69）。
-    // 那是给 28pt 高的窄标题栏配的边距，放到我们这条 56pt 的 bar 里显得贴边，
-    // 所以整组往右挪，左右各留出一样的余量。
+    // Native 14x14 controls start at x = 9/32/55 for a short titlebar. Shift the group
+    // right to give the taller toolbar balanced horizontal margins.
     //
-    // NSView 默认不翻转，y 从下往上算。
+    // Unflipped NSView coordinates increase upward.
     CGFloat shiftX = kButtonLeftMargin - buttons[0].frame.origin.x;
 
     for (NSButton* button : buttons) {

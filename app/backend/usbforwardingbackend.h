@@ -4,30 +4,27 @@
 #include <QString>
 #include <QVariantList>
 
-// USB 设备共享编排层。平台各一支，QML 契约一致：
-//  - Windows：外挂 usbipd-win。枚举设备（usbipd state 的 JSON 输出）、
-//    bind/unbind（需管理员，通过 ShellExecuteW "runas" 触发 UAC）。绑定状态
-//    持久化在 usbipd 自己的注册表里（PersistedGuid）。
-//  - macOS：捆绑的 moonlight-usbd helper（usbipdcpp）。枚举走 `list --json`
-//    （parseHelperDevices 解析），bind/unbind 只是改 Moonlight 自己的偏好
-//    （StreamingPreferences::usbForwardingBoundDevices），无提权。转发用的
-//    serve 进程由 Session 经 UsbForwardingLocalServer 按需拉起。
-// 与 UsbForwardingEnvironment 的分工：后者只做环境体检（版本 + 服务状态），
-// 这里做真正的设备编排。
+// USB sharing orchestration with a common QML contract across platforms.
+// Windows uses usbipd-win: enumerate JSON state and bind/unbind with elevated
+// ShellExecuteW("runas"). usbipd persists bindings in its registry as PersistedGuid.
+// macOS uses the bundled moonlight-usbd helper (usbipdcpp). Enumeration calls
+// list --json; bind/unbind changes StreamingPreferences::usbForwardingBoundDevices
+// without elevation. Session launches serve through UsbForwardingLocalServer as needed.
+// UsbForwardingEnvironment checks versions and service state; this class manages devices.
 //
-// 设备列表每一项是 QVariantMap，键：
-//   busId         Windows "1-2" / "IncompatibleHub" / ""（未连接）；macOS 拓扑
-//                 路径 "1-2" / "1-2.3"（经 hub 时带点）
-//   description   设备描述名
-//   instanceId    Windows 实例 ID（USB\VID_XXXX&PID_YYYY\...）；macOS 为序列号
+// Each device is a QVariantMap with these keys:
+//   busId         Windows: 1-2, IncompatibleHub, or empty when disconnected;
+//                 macOS: topology paths such as 1-2 or 1-2.3 through a hub
+//   description   Human-readable device description
+//   instanceId    Windows USB instance ID; macOS serial number
 //   vidPid        "xxxx:yyyy"
-//   isBound       bool（Windows：PersistedGuid 非空；macOS：在偏好列表中）
-//   isConnected   bool，当前在枚举输出里
-//   isAttached    bool，正在被某客户端使用（macOS 恒 false）
-//   isSupported   bool，可共享（已连接、busid 合法；macOS 还要求未被系统占用）
-//   isForced      bool（仅 Windows）
-//   persistedGuid 已持久化的共享 GUID（仅 Windows；macOS 恒空）
-//   isOccupied    bool（仅 macOS）：接口被 macOS 系统驱动占用，无法共享
+//   isBound       Windows: nonempty PersistedGuid; macOS: present in preferences
+//   isConnected   Device is currently enumerated
+//   isAttached    Device is used by a client (always false on macOS)
+//   isSupported   Connected, valid bus ID; on macOS, also not occupied by the system
+//   isForced      Windows-only flag
+//   persistedGuid Windows-only persisted sharing GUID; empty on macOS
+//   isOccupied    macOS system driver owns an interface, preventing sharing
 class UsbForwardingBackend : public QObject
 {
     Q_OBJECT
@@ -38,10 +35,9 @@ class UsbForwardingBackend : public QObject
 public:
     static UsbForwardingBackend* get();
 
-    // 解析 moonlight-usbd `list --json` 的输出（macOS 枚举数据源）。
-    // 返回与 refresh() 相同 schema 的 QVariantMap 列表（isBound 恒 false，
-    // 由调用方按偏好叠加）。失败时置 *error 并返回空表。公开成静态纯函数
-    // 以便脱离进程做单元测试（tests/usb_forwarding_backend_list）。
+    // Parse macOS moonlight-usbd list --json output into refresh()'s device schema.
+    // isBound starts false; the caller overlays preferences. On failure, set *error
+    // and return an empty list. Exposed as a pure static function for process-free tests.
     static QVariantList parseHelperDevices(const QByteArray& helperJson, QString* error);
 
     Q_INVOKABLE void refresh();

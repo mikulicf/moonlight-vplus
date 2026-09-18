@@ -17,7 +17,7 @@ import "theme"
 import "Brand.js" as Brand
 
 CenteredGridView {
-    // 这一页自带壁纸，main.qml 不用再垫一层
+    // This page provides its own wallpaper; main.qml must not add another layer.
     readonly property bool usesOwnBackground: true
     property ComputerModel computerModel : createModel()
     readonly property string currentBgUrl: backgroundImage.currentImageUrl
@@ -39,8 +39,8 @@ CenteredGridView {
         return true
     }
 
-    // 壁纸由这一页负责抓取和刷新，但整个窗口都要用，所以每次变化都同步给 ApplicationWindow。
-    // 这样离开这一页之后（连接进度页、退出页、设置页）背景不会突然变成一块纯色。
+    // PcView fetches and refreshes wallpaper, then shares it with ApplicationWindow
+    // so loading, exit, and settings pages retain the background after navigation.
     onCurrentBgUrlChanged: {
         if (Window.window) {
             Window.window.backgroundImageUrl = currentBgUrl
@@ -50,7 +50,7 @@ CenteredGridView {
     id: pcGrid
     focus: true
     activeFocusOnTab: true
-    topMargin: 72   // 工具栏 56 + 一格间距
+    topMargin: 72   // 56-pixel toolbar plus one spacing unit.
     bottomMargin: 5
     cellWidth: 240; cellHeight: 280;
     objectName: qsTr("Computers")
@@ -128,10 +128,9 @@ CenteredGridView {
 
     function openAppView(computerIndex, computerName, showHiddenGames)
     {
-        // 造不出来时 createObject 返回 null，push(null) 只会往日志里丢一句
-        // 「nothing to push」就完了 —— 界面上表现为「点了没反应」，非常难查。
-        // status 和 createObject 的返回值都要看：status 只说明文件加载成功了，
-        // 实例化本身还可能失败（属性赋值出错等）。
+        // Check both component status and createObject(): loading can succeed while
+        // instantiation fails. Pushing null only logs 'nothing to push', leaving the
+        // user with an apparently unresponsive click.
         function fail(reason) {
             console.error("Failed to open AppView.qml: " + reason)
             errorDialog.text = qsTr("Unable to open the app list for %1.").arg(computerName)
@@ -163,7 +162,7 @@ CenteredGridView {
     {
         var addresses = computerModel.getConnectionAddressesForComputer(computerIndex)
 
-        // 列表里第一项是「自动」这个伪条目，判断有没有可选地址得数真地址。
+        // Count real addresses, excluding the synthetic Automatic entry.
         var realAddressCount = 0
         for (var i = 0; i < addresses.length; i++) {
             if (!addresses[i].isAuto) {
@@ -185,7 +184,7 @@ CenteredGridView {
             return
         }
 
-        // 预选交给 SelectAddressDialog 自己按 isActive 算
+        // SelectAddressDialog derives its initial selection from isActive.
         selectAddressDialog.pcIndex = computerIndex
         selectAddressDialog.pcName = computerName
         selectAddressDialog.openAppAfterSelection = openAppAfterSelection === true
@@ -194,8 +193,8 @@ CenteredGridView {
         selectAddressDialog.open()
     }
 
-    // 搜索状态：Manrope 800 大标题 + DM Mono 说明行 + 斜条纹读条，
-    // 都咬着同一条左基线。
+    // Search state: Manrope 800 heading, DM Mono detail, and striped progress bar
+    // aligned to the same left edge.
     Column {
         anchors.centerIn: parent
         width: Math.min(parent.width - Theme.spaceXl * 2, 560)
@@ -211,12 +210,11 @@ CenteredGridView {
             font.weight: Font.ExtraBold
             font.capitalization: Font.AllUppercase
             font.letterSpacing: Theme.trackingTight(26)
-            // 标题和说明都咬着读条的左基线，不居中 —— 和加载页、退出页一致
+            // Align text to the progress bar's left edge, matching loading and exit pages.
             horizontalAlignment: Text.AlignLeft
         }
 
-        // 关掉 mDNS 时读条停在暗态：这里本来就没有在扫描，一台没通电的仪表比
-        // 一条空轨道更说明问题。
+        // With mDNS disabled, leave the progress bar inactive because no scan is running.
         HardProgress {
             width: parent.width
             running: StreamingPreferences.enableMdns
@@ -236,19 +234,17 @@ CenteredGridView {
 
     model: computerModel
 
-    // 这一项刻意不跟着换成 Panel 硬卡片：月球头像是这一页的创意主体，
-    // 一旦套上方角卡片和硬投影，月球就从「浮在壁纸上的天体」变成「贴纸」，
-    // 而且卡片自带的 hover 高亮块会和头像抢注意力。样式和交互都按改造前保留。
+    // Preserve the floating moon avatars rather than enclosing them in square cards.
+    // A card's hover background and shadow would compete with the avatar's visual emphasis.
     delegate: NavigableItemDelegate {
         width: 240; height: 240;
         grid: pcGrid
 
         property alias pcContextMenu : pcContextMenuLoader.item
 
-        // 右键菜单是异步 Loader 造的，刚进视野的条目上 item 还是 null。四个调用点
-        // 以前都直接用，读 null 的成员会抛 TypeError，这一次点击就被静默吃掉 ——
-        // 表现正是「点了没反应，再点一次才出来」。这里记下意图，等造好再开。
-        // 0 = 没有待处理，1 = open()，2 = popup()（跟着鼠标位置）
+        // The asynchronous context-menu Loader may still be null on the first click.
+        // Remember the request and open when ready instead of throwing a TypeError.
+        // 0 = none, 1 = open(), 2 = popup() at the pointer position.
         property int pendingMenuRequest: 0
 
         function openContextMenu(atCursor) {
@@ -262,7 +258,7 @@ CenteredGridView {
                 pcContextMenuLoader.item.popup()
             }
             else {
-                // Qt 5.9 没有 popup()；键盘触发时也走这条，菜单落在条目上而不是光标处
+                // Qt 5.9 lacks popup(); keyboard requests also open at the item, not the pointer.
                 pcContextMenuLoader.item.open()
             }
         }
@@ -276,7 +272,7 @@ CenteredGridView {
             height: 160
             radius: width / 2
             color: {
-                // 根据名称生成固定颜色，确保同一台PC总是相同颜色
+                // Derive a stable color from the PC name.
                 var hash = 0;
                 for (var i = 0; i < model.name.length; i++) {
                     hash = model.name.charCodeAt(i) + ((hash << 5) - hash);
@@ -296,7 +292,7 @@ CenteredGridView {
                 opacity: 0.7
                 fillMode: Image.PreserveAspectFit
 
-                // 根据PC名称生成旋转角度
+                // Derive the rotation angle from the PC name.
                 property real rotationAngle: {
                     var hash = 0;
                     for (var i = 0; i < model.name.length; i++) {
@@ -382,8 +378,8 @@ CenteredGridView {
             id: pcContextMenuLoader
             asynchronous: true
             onLoaded: {
-                // 造好之前有人点过，把那次点击补上。但要确认这一页还在最前面 ——
-                // 点完立刻返回或进入某台主机的话，菜单会弹在新页面上。
+                // Fulfill a pending click only if this page is still current; otherwise
+                // the menu could appear over a newly opened host or previous page.
                 if (pcContextMenuLoader.parent.pendingMenuRequest !== 0) {
                     if (pcGrid.StackView.status === StackView.Active) {
                         pcContextMenuLoader.parent.openContextMenu(
@@ -622,7 +618,7 @@ CenteredGridView {
         }
     }
 
-    // 和 AppView 的地址选择框是同一个组件，只有提示语和落地方式不同
+    // Share AppView's address dialog with different prompt and application behavior.
     SelectAddressDialog {
         id: selectAddressDialog
         property int pcIndex: -1
@@ -688,9 +684,9 @@ CenteredGridView {
             } else if (status === Image.Error) {
                 loadingIndicator.visible = false
                 if (StreamingPreferences.backgroundSource === StreamingPreferences.BGS_LOCAL) {
-                    errorDialog.text = qsTr("The local background could not be loaded. Photography has been restored.")
+                    errorDialog.text = qsTr("The local background could not be loaded. The background has been disabled.")
                     errorDialog.open()
-                    restorePhotographyFromInvalidLocalImage()
+                    clearInvalidLocalBackground()
                 }
                 else if (usesNetworkSource()) {
                     getBackgroundImage()
@@ -707,17 +703,15 @@ CenteredGridView {
             switch (StreamingPreferences.backgroundSource) {
             case StreamingPreferences.BGS_PHOTOGRAPHY:
                 return "photography:picsum"
-            case StreamingPreferences.BGS_ANIME:
-                return "anime:pipw"
             case StreamingPreferences.BGS_API:
                 var apiUrl = StreamingPreferences.backgroundImageApi.trim()
-                return apiUrl === "" ? "photography:picsum" : "api:" + apiUrl
+                return apiUrl === "" ? "none" : "api:" + apiUrl
             case StreamingPreferences.BGS_LOCAL:
                 return "local:" + StreamingPreferences.backgroundImageLocalPath
             case StreamingPreferences.BGS_NONE:
                 return "none"
             default:
-                return "photography:picsum"
+                return "none"
             }
         }
 
@@ -727,11 +721,7 @@ CenteredGridView {
                 return "https://picsum.photos/1920/1080?random=" + Date.now()
             case StreamingPreferences.BGS_API:
                 var apiUrl = StreamingPreferences.backgroundImageApi.trim()
-                return apiUrl === ""
-                       ? "https://picsum.photos/1920/1080?random=" + Date.now()
-                       : apiUrl
-            case StreamingPreferences.BGS_ANIME:
-                return "https://img-api.pipw.top"
+                return apiUrl
             default:
                 return ""
             }
@@ -753,9 +743,9 @@ CenteredGridView {
             currentImageUrl = ""
         }
 
-        function restorePhotographyFromInvalidLocalImage() {
+        function clearInvalidLocalBackground() {
             clearBackground()
-            // Clearing the local path also restores BGS_PHOTOGRAPHY in StreamingPreferences.
+            // Clearing the local path also selects the offline BGS_NONE background.
             StreamingPreferences.backgroundImageLocalPath = ""
             StreamingPreferences.save()
         }
@@ -783,19 +773,17 @@ CenteredGridView {
                 }
 
                 if (validationError !== "") {
-                    errorDialog.text = validationError + "\n\n" + qsTr("Photography has been restored.")
+                    errorDialog.text = validationError + "\n\n" + qsTr("The background has been disabled.")
                     errorDialog.open()
                 }
-                restorePhotographyFromInvalidLocalImage()
+                clearInvalidLocalBackground()
                 return
             }
 
             var cacheKey = configuredCacheKey()
-            var canMigrateLegacyCache = settings.cachedSourceKey === "" &&
-                                        StreamingPreferences.backgroundSource === StreamingPreferences.BGS_ANIME
             if (!forceRefresh && settings.cachedImagePath &&
                     imageUtils.fileExists(settings.cachedImagePath) &&
-                    (settings.cachedSourceKey === cacheKey || canMigrateLegacyCache)) {
+                    settings.cachedSourceKey === cacheKey) {
                 settings.cachedSourceKey = cacheKey
                 showBackground(cacheFileUrl(settings.cachedImagePath))
 
@@ -855,7 +843,7 @@ CenteredGridView {
 
         Timer {
             id: loadNewImageTimer
-            interval: 1000 // 延迟1秒加载新图片
+            interval: 1000 // Delay loading the next image by one second.
             repeat: false
             onTriggered: {
                 backgroundImage.getBackgroundImage();
@@ -884,7 +872,7 @@ CenteredGridView {
         }
     }
 
-    // 拖放时的边框效果
+    // Drag-and-drop border feedback.
     Rectangle {
         id: dragBorder
         anchors.fill: parent
@@ -895,7 +883,7 @@ CenteredGridView {
         z: 1
     }
 
-    // 拖放提示文字
+    // Drag-and-drop hint text.
     Column {
         anchors.centerIn: parent
         spacing: Theme.spaceSm
@@ -919,24 +907,24 @@ CenteredGridView {
         }
     }
 
-    // 添加右键菜单功能
+    // Background context-menu interaction.
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.RightButton
         propagateComposedEvents: true
-        z: -1  // 确保这个MouseArea位于PC条目之下
+        z: -1  // Keep this MouseArea below PC items.
 
         onClicked: function(mouse) {
             if (mouse.button === Qt.RightButton) {
                 if (backgroundImage.currentImageUrl) {
-                    console.log("右键菜单被触发")
+                    console.log("Context menu requested")
                     backgroundContextMenu.popup()
                 }
             }
         }
     }
 
-    // 添加上下文菜单
+    // Background context menu.
     NavigableMenu {
         id: backgroundContextMenu
         property real lastRefreshTime: 0  // Date.now() is a 13-digit millisecond timestamp
@@ -945,7 +933,7 @@ CenteredGridView {
             parentMenu: backgroundContextMenu
             text: qsTr("Save wallpaper")
             onTriggered: {
-                console.log("触发下载背景图片")
+                console.log("Background image download requested")
                 saveFileDialog.open()
             }
         }
@@ -968,17 +956,17 @@ CenteredGridView {
         }
     }
 
-    // 添加刷新定时器，避免可能的调用冲突
+    // Defer refresh to avoid overlapping calls.
     Timer {
         id: refreshTimer
-        interval: 200  // 延迟200毫秒
+        interval: 200  // Delay by 200 milliseconds.
         repeat: false
         onTriggered: {
             backgroundImage.reloadFromPreferences(true)
         }
     }
 
-    // 文件保存对话框
+    // File save dialog.
     FileDialog {
         id: saveFileDialog
         title: qsTr("Choose where to save")
@@ -987,7 +975,7 @@ CenteredGridView {
 
         currentFile: {
             var timestamp = new Date().getTime()
-            // 从URL中提取文件扩展名
+            // Extract the file extension from the URL.
             var extension = ".jpg"
             if (backgroundImage.currentImageUrl) {
                 var urlPath = backgroundImage.currentImageUrl.toString()
@@ -1002,18 +990,18 @@ CenteredGridView {
         onAccepted: {
             var finalPath = saveFileDialog.fileUrl || saveFileDialog.currentFile || saveFileDialog.file
 
-            console.log("原始路径: " + finalPath)
+            console.log("Original path: " + finalPath)
 
             if (finalPath) {
                 var ext = finalPath.toString().split('.').pop().toLowerCase()
                 if (["jpg", "jpeg", "png", "webp"].indexOf(ext) === -1) {
-                    finalPath = finalPath + ".jpg"  // 添加默认扩展名
+                    finalPath = finalPath + ".jpg"  // Add the default extension.
                 }
                 imageUtils.saveImageToFile(backgroundImage.currentImageUrl, finalPath)
             } else {
                 var timestamp = new Date().getTime()
                 finalPath = "file:///setu_" + timestamp + ".jpg"
-                console.log("使用默认路径: " + finalPath)
+                console.log("Using default path: " + finalPath)
                 imageUtils.saveImageToFile(backgroundImage.currentImageUrl, finalPath)
             }
         }
@@ -1036,7 +1024,7 @@ CenteredGridView {
         visible: false
     }
 
-    // 壁纸遮罩强度由软件设置统一控制，默认值仍是原来的 72%。
+    // Software settings control wallpaper dimming; the default remains 72%.
     Rectangle {
         anchors.fill: parent
         visible: StreamingPreferences.backgroundSource !== StreamingPreferences.BGS_NONE
@@ -1059,7 +1047,7 @@ CenteredGridView {
         onSaveCompleted: function(success, message) {
             if (success) {
                 saveNotification.text = qsTr("Image saved to: %1").arg(message)
-                // 自动关闭通知
+                // Dismiss the notification automatically.
                 autoCloseTimer.start()
             } else {
                 saveNotification.text = qsTr("Save failed: %1").arg(message)
@@ -1073,10 +1061,10 @@ CenteredGridView {
         title: qsTr("Save result")
         standardButtons: DialogButtonBox.Ok
 
-        // 添加自动关闭计时器
+        // Automatic notification dismissal timer.
         Timer {
             id: autoCloseTimer
-            interval: 3000 // 3秒后自动关闭
+            interval: 3000 // Dismiss after three seconds.
             repeat: false
             onTriggered: {
                 saveNotification.close()

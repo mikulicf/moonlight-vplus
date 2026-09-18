@@ -2,16 +2,15 @@ import QtQuick 2.9
 import QtQuick.Layouts 1.3
 import "../theme"
 
-// 一行设置：左边标题 + 说明，右边控件。
-// 用 FocusScope 是为了让 activeFocus 在内部控件获得焦点时为真，
-// 这样手柄/键盘 Tab 过来时整行会亮起来，而不是只有控件本身有个小框。
+// Settings row: title/description on the left and control on the right. FocusScope
+// lets the row highlight whenever an internal control receives keyboard/gamepad focus.
 FocusScope {
     id: row
 
     property string title: ""
     property string description: ""
     property real descriptionFontPointSize: Theme.fontSettingsSubtitle
-    // 业务上是否该显示这一行（例如某功能在当前平台不可用）
+    // Whether the row applies to this platform or feature configuration.
     property bool applicable: true
     readonly property bool stacked: width < Theme.settingsRowStackBreakpoint
     readonly property bool hoverable: controlSlot.children.length > 0
@@ -23,13 +22,10 @@ FocusScope {
     height: visible ? implicitHeight : 0
     implicitHeight: contentLayout.implicitHeight + Theme.spaceMd * 2
 
-    // 行背景：方角，hover 时填 surface2；焦点落进这一行时填 surface2 并在左边
-    // 立一条 accent 粗条。
+    // Square surface2 background on hover or focus; add a left accent bar for row focus.
     //
-    // 以前焦点是给整行描一圈 1px accent。问题是 Tab 进来时焦点其实落在行里的控件上，
-    // 于是控件自己的焦点框和整行的框套在一起，成了两个同色方框嵌套，很脏。
-    // 换成左侧粗条之后两者形态完全不同：粗条说「焦点在这一行」，控件的方框说
-    // 「具体在这个控件上」，叠在一起也读得清。粗条也是这套设计里 Panel 现成的语汇。
+    // A row-wide border would nest with the control's own focus frame. Use a bar
+    // to identify the focused row and a frame to identify the focused control.
     Rectangle {
         anchors.fill: parent
         radius: 0
@@ -56,8 +52,7 @@ FocusScope {
             }
             height: 1
             color: Theme.line
-            // 行与行之间的 1px 分隔（这套设计靠细线分栏，不靠间距）。
-            // 同一个 Column 里最后一行不画，避免和卡片下沿贴出双线。
+            // Separate rows with one-pixel lines, omitting the last to avoid a double card border.
             visible: row.parent && row.parent.children
                      && row.parent.children[row.parent.children.length - 1] !== row
         }

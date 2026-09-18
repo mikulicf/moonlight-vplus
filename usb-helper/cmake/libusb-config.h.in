@@ -1,7 +1,6 @@
-/* config.h — 直接编译 vendored libusb 用的手动配置。
- * 逐条来自 libusb 自带的 Xcode/config.h（为 Xcode 构建手工维护的同源版本），
- * 加上 configure.ac darwin 分支会探测出的项（HAVE_SYS_TIME_H 等）。
- * 不要随意增删：libusbi.h 以 <config.h> 形式包含本文件。 */
+/* Manual configuration for the vendored libusb build, based on its Xcode/config.h
+ * and Darwin checks in configure.ac, including HAVE_SYS_TIME_H.
+ * Keep changes deliberate: libusbi.h includes this file as <config.h>. */
 #include <AvailabilityMacros.h>
 
 /* Define to the attribute for default visibility. */

@@ -551,9 +551,8 @@ bool NvComputer::resetToAutomaticAddress()
 
     pinnedAddress = NvAddress();
 
-    // 让 activeAddress 退回自然顺序里的头一个地址，后面的失败回退仍由轮询完成。
-    // 不能直接置空：activeAddress 同时是 NvHTTP 和串流真正使用的地址，置空会留下
-    // 一个到下次轮询为止的窗口期，期间开始串流会连不上。
+    // Reset activeAddress to the first natural candidate; polling handles further fallbacks.
+    // Do not clear it: NvHTTP and streaming use it before the next poll can rebuild it.
     const NvAddress candidates[] = {
         localAddress,
         remoteAddress,
@@ -567,7 +566,7 @@ bool NvComputer::resetToAutomaticAddress()
         }
     }
 
-    // 一个具体地址都没有（不该发生）。保持现状，别把能用的地址弄丢。
+    // No concrete address exists (unexpected). Preserve the current usable address.
     return false;
 }
 

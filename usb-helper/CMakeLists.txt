@@ -5,18 +5,16 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# --- vendored 依赖（third_party/ 下 4 个 git submodule，.gitmodules 锁 tag）---
+# --- Vendored dependencies: four Git submodules with pinned commits. ---
 #
-# asio/spdlog 官方只在安装后才提供 CMake config 包，submodule 场景拿不到；
-# 用我们自己的极简 config 包（cmake/packages/）把 find_package 指到源码树。
-# libusb/usbipdcpp 直接 add_subdirectory 静态构建。
+# asio/spdlog provide CMake configs only after installation. Supply minimal
+# configs in cmake/packages for source-tree find_package calls.
+# Build libusb/usbipdcpp statically through add_subdirectory.
 list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/packages")
 
-# libusb 静态库。v1.0.29 没有 CMake 构建（autotools/Xcode），也不想在打包
-# 脚本里引入 autotools 依赖：直接按 Makefile.am 的 darwin+posix 源文件清单
-# 编译，config.h 用 cmake/libusb-config.h.in（内容同源于 Xcode/config.h）。
-# usbipdcpp 按 Homebrew 布局 include <libusb-1.0/libusb.h>，vendored 源码树是
-# libusb/libusb.h —— 再生成一个转发头补齐布局。
+# libusb 1.0.29 has no CMake build. Compile the Darwin/POSIX sources from Makefile.am
+# directly using a config based on Xcode/config.h, avoiding an autotools dependency.
+# Generate a libusb-1.0/libusb.h shim for usbipdcpp's Homebrew-style include layout.
 set(LIBUSB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libusb/libusb")
 add_library(usb-1.0 STATIC
     "${LIBUSB_DIR}/core.c"
@@ -43,12 +41,10 @@ set(LIBUSB_HEADER_PATH "${LIBUSB_DIR}/libusb.h")
 configure_file(cmake/libusb-1.0.h.in
                "${CMAKE_BINARY_DIR}/libusb-shim/libusb-1.0/libusb.h" @ONLY)
 
-# usbipdcpp 的 libusb 组件无条件走 pkg-config（pkg_check_modules libusb-1.0），
-# 给上面的静态构建生成一个 .pc。解析必须完全确定性：PKG_CONFIG_LIBDIR 覆盖
-# pkg-config 的默认搜索路径，把 Homebrew 的同名 .pc 彻底隔离（只排
-# PKG_CONFIG_PATH 顺序不够——runner 的 brew libusb 恰好也是 1.0.29，第二轮
-# CI 实测仍被抢解析成动态链接）；.pc 的 Libs 再给静态档案绝对路径，杜绝
-# -lusb-1.0 被任何搜索路径上的 dylib 抢先。
+# usbipdcpp always discovers libusb through pkg-config. Generate a .pc for our static
+# build and isolate discovery with PKG_CONFIG_LIBDIR; PATH ordering alone can still
+# select Homebrew's identical-version dylib. Use the archive's absolute path in Libs
+# so -lusb-1.0 cannot resolve to a dynamic library elsewhere.
 configure_file(cmake/libusb-1.0.pc.in
                "${CMAKE_BINARY_DIR}/pkgconfig/libusb-1.0.pc" @ONLY)
 set(ENV{PKG_CONFIG_LIBDIR} "${CMAKE_BINARY_DIR}/pkgconfig")

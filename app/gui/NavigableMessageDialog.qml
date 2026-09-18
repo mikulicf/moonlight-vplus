@@ -23,12 +23,12 @@ NavigableDialog {
         }
     }
 
-    // background 不再自己覆盖，直接用 NavigableDialog 的 Panel（方角 + 硬投影 + 粗条）
+    // Inherit NavigableDialog's square Panel, hard shadow, and accent bar.
 
     RowLayout {
         spacing: Theme.spaceLg
 
-        // 转圈换成一格格点亮的方块，和风格里「零模糊、纯几何」一致
+        // Use sequential square indicators instead of a circular spinner.
         Row {
             id: dialogSpinner
 
@@ -95,7 +95,7 @@ NavigableDialog {
         spacing: Theme.spaceSm
         alignment: Qt.AlignRight
 
-        // FluentWinUI3 的 DialogButtonBox 自带一块圆角底板，去掉，让它落在 Panel 上
+        // Remove FluentWinUI3's rounded DialogButtonBox backing so it sits directly on Panel.
         background: Item {}
 
         delegate: HardButton {

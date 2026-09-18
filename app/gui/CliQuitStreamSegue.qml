@@ -30,8 +30,7 @@ Item {
         }
     }
 
-    // 和串流加载页 / 退出页同一套：Manrope 800 左对齐阶段文字 + 斜条纹读条。
-    // 命令行入口以前还留着转圈的 BusyIndicator，那是整个应用里最后几处圆形动效。
+    // Match stream loading/exit pages: left-aligned Manrope 800 stage text and a striped bar.
     Column {
         anchors.centerIn: parent
         width: Math.min(parent.width - Theme.spaceXl * 2, 620)
@@ -41,9 +40,8 @@ Item {
             id: stageLabel
 
             width: parent.width
-            // 文案由 onSearchingComputer() / onQuittingApp() 直接赋值。
-            // 这里以前绑的是 stageText，而这个文件里从来没声明过它 —— 页面一实例化
-            // 就是个 ReferenceError。兄弟文件 CliPair / CliStartStreamSegue 都没有这行。
+            // onSearchingComputer()/onQuittingApp() set this text directly.
+            // Do not bind to stageText: it is not declared in this file.
             color: Theme.text
             font.family: Theme.fontSans
             font.pointSize: 24

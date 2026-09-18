@@ -1631,11 +1631,11 @@ bool Session::initialize(QQuickWindow* qtWindow)
     m_StreamConfig.width = m_Preferences->width;
     m_StreamConfig.height = m_Preferences->height;
 
-    // 应用分辨率缩放
+    // Apply stream-resolution scaling.
     if (m_Preferences->streamResolutionScale && m_Preferences->streamResolutionScaleRatio != 100) {
         int scaledWidth = m_StreamConfig.width * m_Preferences->streamResolutionScaleRatio / 100;
         int scaledHeight = m_StreamConfig.height * m_Preferences->streamResolutionScaleRatio / 100;
-        // 确保缩放后的分辨率是8的倍数
+        // Keep scaled dimensions aligned to multiples of eight.
         m_StreamConfig.width = (scaledWidth / 8) * 8;
         m_StreamConfig.height = (scaledHeight / 8) * 8;
     }
@@ -1946,7 +1946,7 @@ bool Session::initialize(QQuickWindow* qtWindow)
         return false;
     }
 
-    // 启动带宽计算
+    // Start bandwidth measurement.
     BandwidthCalculator::instance()->start();
 
     return true;
@@ -2570,7 +2570,8 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition,
                                 bool closeWhenPointerOutside)
 {
     if (!m_MenuPanel || m_MenuPanel->isMenuVisible() || m_MenuPanel->isClosing()) return;
-    if (!isStreamingWindowVisible()) return;
+    if (!isStreamingWindowActive())
+        return;
 
     // Check if overlay menu is disabled before releasing mouse capture
     if (m_Preferences->overlayMenuPosition == StreamingPreferences::OMP_DISABLED) {
@@ -2682,9 +2683,16 @@ bool Session::isStreamingWindowVisible() const
            !(windowFlags & (SDL_WINDOW_HIDDEN | SDL_WINDOW_MINIMIZED));
 }
 
+bool Session::isStreamingWindowActive() const
+{
+    // A shown window can still be behind another application. The separate
+    // topmost overlay windows must only belong to the focused stream.
+    return isStreamingWindowVisible() && (SDL_GetWindowFlags(m_Window) & SDL_WINDOW_INPUT_FOCUS);
+}
+
 void Session::syncQtOverlayWindowsWithSdlWindowState()
 {
-    if (!isStreamingWindowVisible()) {
+    if (!isStreamingWindowActive()) {
         if (m_MenuPanel && m_MenuPanel->isMenuVisible()) {
             m_MenuPanel->closeMenu();
         }
@@ -4427,12 +4435,11 @@ void Session::queryDisplayHdrBrightness(const QString& preferredDisplayName,
 }
 #endif
 
-// 加载页退场淡幕的时长上限，比 StreamSegue.qml 里那条 340ms 动画留一点余量。
-// 两边要一起改。
+// Allow slightly longer than StreamSegue.qml's 340 ms exit fade; change them together.
 static const int k_StreamEnterVeilMs = 380;
 
-// 等全屏切换完成的兜底超时。macOS 的全屏动画约 0.5~0.7s，取个宽松上限；
-// 万一平台不发 SIZE_CHANGED，也不能让界面窗口一直留着。
+// Allow for macOS's roughly 0.5-0.7-second fullscreen transition. A fallback timeout
+// prevents the GUI from remaining visible if SIZE_CHANGED never arrives.
 static const Uint32 k_FullScreenEntryTimeoutMs = 1200;
 
 void Session::exec()
@@ -4471,15 +4478,14 @@ void Session::exec()
     int x, y, width, height;
     getWindowDimensions(x, y, width, height);
 
-    // 全屏会话：让串流窗口从 Qt 界面窗口所在的位置和尺寸起步。
+    // Start fullscreen streams with the GUI window's current position and size.
     //
-    // getWindowDimensions() 给的是「屏幕居中 + 串流分辨率」，那是退出全屏之后
-    // 该有的窗口大小，但拿它当全屏动画的起点就不对了 —— 系统会从一个和刚才那个
-    // 界面窗口毫无关系的矩形开始放大，看起来像凭空弹出一个空窗口再被撑大。
-    // 用界面窗口自己的 frame 起步，动画读起来就是「刚才那个窗口变成了全屏」。
+    // getWindowDimensions() describes the centered window to restore after fullscreen,
+    // not the animation's starting rectangle. Starting from the GUI frame makes the
+    // existing window appear to expand naturally instead of creating an unrelated one.
     //
-    // 这里只改初始创建；运行中 Ctrl+Alt+Shift+F 退出全屏时走的是 toggleFullscreen()
-    // 里的那次 getWindowDimensions()，恢复的仍然是串流分辨率大小。
+    // Change only initial creation. toggleFullscreen() still restores stream-resolution
+    // dimensions when leaving fullscreen during a session.
     if (m_IsFullScreen && m_QtWindow != nullptr) {
         const QRect creationGeometry = qtWindowCreationGeometryForSdl(m_QtWindow);
         if (creationGeometry.isValid()) {
@@ -4490,14 +4496,13 @@ void Session::exec()
         }
     }
 
-    // 让加载页的退场动画真正跑完，再去创建串流窗口。
+    // Complete the loading-page fade before creating the streaming window.
     //
-    // connectionStarted 和 exec() 是同一批投递到主线程的信号，所以那个 340ms 的
-    // 淡幕动画实际上拿不到任何主循环时间 —— 幕从来没黑下来过，SDL 窗口就直接盖在
-    // 加载页上，观感是硬切。这里主动把主循环喂满一段时间让它跑完。
+    // connectionStarted and exec() reach the main thread together. Pump Qt long enough
+    // for the 340 ms fade to run before SDL covers the loading page.
     //
-    // 必须在这儿做完：exec() 往下就进 SDL 事件循环了，那之后 Qt 的定时器和队列信号
-    // 只在串流覆盖层可见时才会被 pump，QML 侧再也等不到机会。
+    // Do this before entering SDL's loop, where Qt timers and queued signals are
+    // processed only when streaming UI requests event handling.
     if (m_QtWindow != nullptr) {
         QElapsedTimer veilTimer;
         veilTimer.start();
@@ -4635,28 +4640,25 @@ void Session::exec()
         }
     }
 
-    // 串流窗口就位之后才隐藏界面窗口。
+    // Hide the GUI only after the streaming window is ready.
     //
-    // 以前这件事在 QML 的退场动画末尾做（hideForStreaming），时机太早：macOS 上
-    // 全屏窗口会切进一个新的 Space，界面窗口一旦提前藏掉，旧 Space 在整个切换动画
-    // 期间露出来的就是桌面。留着它（上面盖着那层已经全黑的幕）观感是连续的。
+    // Hiding at the end of the QML fade is too early on macOS: the outgoing Space
+    // would expose the desktop during the fullscreen animation. Keep the black GUI curtain.
     //
-    // 但也不能在这儿就藏：SDL_SetWindowFullscreen() 在 macOS 上是异步的，它在 Cocoa
-    // 的 toggleFullScreen: 动画一开始就返回，那会儿旧 Space 还在往外滑。所以这里只
-    // 登记一个截止时间，真正的隐藏交给事件循环 —— 收到 SIZE_CHANGED（Cocoa 在全屏
-    // 切换结束后才发）就藏，收不到就等超时兜底。
+    // SDL_SetWindowFullscreen() returns before Cocoa's animation finishes. Record
+    // a deadline and let the event loop hide the GUI on SIZE_CHANGED, which follows
+    // the transition, or on timeout if the event is absent.
     //
-    // 由 C++ 来做是因为 QML 等不到通知：往下就进 SDL 事件循环了，那之后 Qt 的队列
-    // 信号和定时器只在串流覆盖层可见时才会被 pump。
+    // C++ owns this transition because the upcoming SDL loop does not continuously
+    // dispatch QML's queued signals and timers.
     Uint32 qtWindowHideDeadline = 0;
     if (m_QtWindow != nullptr) {
         if (awaitingFullScreenEntry) {
             qtWindowHideDeadline = SDL_GetTicks() + k_FullScreenEntryTimeoutMs;
         }
         else {
-            // 没有全屏切换要等：窗口化会话，或者上面那次请求失败了。
-            // 失败也照样藏 —— 界面窗口在串流期间没有任何作用，留着它只会把一张
-            // 停在加载页的窗口压在串流窗口后面。
+            // Windowed sessions and failed fullscreen requests need no transition wait.
+            // Hide the now-unused loading window in either case.
             m_QtWindow->setVisible(false);
         }
     }
@@ -4757,7 +4759,7 @@ void Session::exec()
         // we defer capture restoration to after the action completes.
         // See dispatchQtMenuAction() for those cases.
         if (m_WasCapturedBeforeMenu && !m_DeferCaptureRestore) {
-            if (isStreamingWindowVisible()) {
+            if (isStreamingWindowActive()) {
                 m_InputHandler->setCaptureActive(true);
             }
             m_WasCapturedBeforeMenu = false;
@@ -4791,14 +4793,7 @@ void Session::exec()
         showQtOverlayMenu(globalPosition, closeWhenPointerOutside);
     });
 
-    if (m_Preferences->overlayMenuPosition == StreamingPreferences::OMP_BUTTON) {
-        // Show button at initial position
-        const QRect parentRect = qtOverlayGeometryForSdlWindow(m_Window);
-        if (parentRect.isValid()) {
-            m_MenuButton->showButton(parentRect.x(), parentRect.y(),
-                                     parentRect.width(), parentRect.height());
-        }
-    }
+    syncQtOverlayWindowsWithSdlWindowState();
 
     // Switch to async logging mode when we enter the SDL loop
     StreamUtils::enterAsyncLoggingMode();
@@ -4809,15 +4804,13 @@ void Session::exec()
     constexpr Uint32 QT_UI_EVENT_PUMP_INTERVAL_MS = 10;
     Uint32 lastQtEventPumpTicks = 0;
     auto qtUiNeedsEventProcessing = [this]() {
-        // The floating button remains visible for the entire stream. Treating
+        // The floating button remains visible while the stream is focused. Treating
         // visibility as active Qt work forces this SDL loop to wake and drain
         // all Qt events every 10 ms even while the button is idle, which can
         // delay input and video processing.
-        // Remote USB 转发的 queued 工作全部投递在本线程（helper spawn 的
-        // worker-finished lambda、tunnel socket I/O、helper stderr 排水），
-        // 而本循环已取代 app.exec()、只在返回 true 时泵事件：转发存续期间
-        // 必须保持泵转，否则 helper 无法启动、日志会写满 stderr 管道把
-        // moonlight-usbd 卡死、转发数据也会停摆。
+        // USB forwarding posts helper completion, tunnel I/O, and stderr draining
+        // onto this thread. Keep pumping while forwarding is active; otherwise helper
+        // startup, pipe draining, and forwarding traffic can stall.
         return (m_MenuPanel && m_MenuPanel->needsEventProcessing()) ||
                (m_MenuButton && m_MenuButton->needsEventProcessing()) ||
                (m_Toast && m_Toast->needsEventProcessing()) ||
@@ -4916,8 +4909,7 @@ void Session::exec()
     };
 #endif
 
-    // 见上面 qtWindowHideDeadline 处的注释：串流窗口真的落定了（或者等超时了）
-    // 再把界面窗口藏掉。
+    // Hide the GUI when the stream window settles or qtWindowHideDeadline expires.
     auto hideGuiWindowWhenSettled = [&](bool settled) {
         if (qtWindowHideDeadline == 0 || m_QtWindow == nullptr) {
             return;
@@ -5043,6 +5035,9 @@ void Session::exec()
             break;
 
         case SDL_WINDOWEVENT:
+            if (event.window.windowID != SDL_GetWindowID(m_Window)) {
+                break;
+            }
             // Early handling of some events
             switch (event.window.event) {
             case SDL_WINDOWEVENT_FOCUS_LOST:
@@ -5050,16 +5045,14 @@ void Session::exec()
                     m_AudioMuted = true;
                 }
                 m_InputHandler->notifyFocusLost();
-                // Close overlay menu when main window loses focus
-                if (m_MenuPanel && m_MenuPanel->isMenuVisible()) {
-                    m_MenuPanel->closeMenu();
-                }
+                syncQtOverlayWindowsWithSdlWindowState();
                 break;
             case SDL_WINDOWEVENT_FOCUS_GAINED:
                 if (m_Preferences->muteOnFocusLoss) {
                     m_AudioMuted = false;
                 }
                 m_InputHandler->notifyFocusGained();
+                syncQtOverlayWindowsWithSdlWindowState();
                 break;
             case SDL_WINDOWEVENT_LEAVE:
                 m_InputHandler->notifyMouseLeave();
@@ -5070,13 +5063,12 @@ void Session::exec()
             case SDL_WINDOWEVENT_SHOWN:
             case SDL_WINDOWEVENT_MOVED:
             case SDL_WINDOWEVENT_SIZE_CHANGED:
-                // Cocoa 在全屏切换结束之后才发这个事件，拿它当「窗口已落定」的信号
+                // Cocoa emits this after fullscreen settles; use it as the handover signal.
                 hideGuiWindowWhenSettled(true);
                 syncQtOverlayWindowsWithSdlWindowState();
-                // 远端光标的尺寸是按窗口的 backing 比例算的（见 getRemoteCursorScale()），
-                // 换屏、改分辨率、改缩放都会让它失效。挂在这一组事件上而不是只挂
-                // DISPLAY_CHANGED：同一块屏上改系统缩放只会发 SIZE_CHANGED。
-                // 比例没变时这个调用会直接返回，挂宽一点不亏。
+                // Cursor size depends on window backing scale. Display, resolution,
+                // and scale changes can invalidate it; same-display scale changes may
+                // emit only SIZE_CHANGED. The refresh returns early if scale is unchanged.
                 m_InputHandler->refreshRemoteCursorScale();
                 break;
             }
@@ -5611,7 +5603,7 @@ DispatchDeferredCleanup:
     // reference.
     QThreadPool::globalInstance()->start(new DeferredSessionCleanupTask(this));
 
-    // 停止带宽计算
+    // Stop bandwidth measurement.
     BandwidthCalculator::instance()->stop();
 }
 

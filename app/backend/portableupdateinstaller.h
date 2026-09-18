@@ -6,11 +6,11 @@
 class QFile;
 class QNetworkReply;
 
-// 应用内更新的下载与安装。
+// Download and install application updates.
 //
-// 名字里的 "Portable" 是历史包袱：这个类最早只服务 Windows 便携版。现在 macOS 的
-// .app 安装也走同一套骨架（下载 → 校验 → 甩一个 detached 脚本换掉自己并重启），
-// 只是每一步的平台实现不同。信号名和 QML 里的调用点都还在用旧名字，没跟着改。
+// The historical Portable name comes from the Windows-only implementation. macOS .app
+// updates now share the download/verify/detached-replace/restart sequence with platform-
+// specific steps. Existing signal names and QML call sites retain the original naming.
 class PortableUpdateInstaller : public QObject
 {
     Q_OBJECT
@@ -33,17 +33,17 @@ private slots:
 private:
     bool isPortableInstall() const;
     bool isBundleInstall() const;
-    // macOS：当前运行的 Moonlight.app 的路径，取不到（比如没在 bundle 里跑）时为空
+    // macOS: current Moonlight.app path, or empty when not running inside a bundle.
     QString getInstalledBundlePath() const;
     QString getUpdateArchiveName() const;
     QString getUpdateArchiveSuffix() const;
-    // 磁盘空间探测和工作目录落在哪个卷上，Windows 是安装目录、macOS 是缓存目录
+    // Volume used for space checks and staging: the installation's parent directory.
     QString getUpdateStorageProbePath() const;
     QString getPortableUpdaterExecutable() const;
     bool ensureWritableInstallDir(QString& errorMessage) const;
     QString createPortableUpdateWorkspace() const;
     QString materializePortableUpdateScript(const QString& workspace) const;
-    // macOS：挂载 DMG、把里面的 Moonlight.app 拷进工作目录、清掉隔离属性
+    // macOS: mount the DMG, copy Moonlight.app into staging, and prepare its attributes.
     bool stageMacUpdateBundle(const QString& archivePath,
                               QString& stagedBundlePath,
                               QString& errorMessage);

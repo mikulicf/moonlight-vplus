@@ -7,8 +7,8 @@ import StreamingPreferences 1.0
 
 import "theme"
 
-// 全新安装只显示一次的背景风格选择。这里只收集选择，偏好保存和后续
-// 配置检查仍由 ApplicationWindow 统一安排，避免多个启动弹窗重叠。
+// Collect a one-time background choice. ApplicationWindow saves preferences and
+// sequences later setup checks so startup dialogs do not overlap.
 NavigableDialog {
     id: dialog
 
@@ -20,7 +20,6 @@ NavigableDialog {
 
     readonly property var choices: [
         { label: qsTr("Photography"), source: StreamingPreferences.BGS_PHOTOGRAPHY },
-        { label: qsTr("Anime"), source: StreamingPreferences.BGS_ANIME },
         { label: qsTr("No background"), source: StreamingPreferences.BGS_NONE }
     ]
 
@@ -42,7 +41,7 @@ NavigableDialog {
 
         Text {
             Layout.fillWidth: true
-            text: qsTr("Choose the style of random backgrounds shown on the computer list. You can change this at any time in Software Settings.")
+            text: qsTr("Choose a background for the computer list. Photography downloads images from Lorem Picsum. No background works offline. You can change this in Software Settings.")
             color: Theme.textSettingsSubtitle
             font.family: Theme.fontSans
             font.pointSize: Theme.fontSettingsSubtitle
@@ -73,7 +72,7 @@ NavigableDialog {
 
         HardButton {
             text: qsTr("Decide later")
-            onClicked: dialog.chooseSource(StreamingPreferences.BGS_PHOTOGRAPHY)
+            onClicked: dialog.chooseSource(StreamingPreferences.BGS_NONE)
         }
     }
 }

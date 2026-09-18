@@ -1,8 +1,7 @@
 import QtQuick 2.9
 import "../theme"
 
-// 只读 HUD 芯片标签：深色切角底板、青色细边和状态点。
-// 始终水平显示，不承担点击或状态交互。
+// Read-only horizontal tag with dark clipped corners, teal border, and a status dot.
 Item {
     id: tag
 

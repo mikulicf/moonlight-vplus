@@ -237,17 +237,14 @@ bool SdlInputHandler::sendMacTouchpadButtonState(bool down)
 {
     const uint8_t buttonState = down ? LI_TOUCHPAD_BUTTON_PRIMARY : 0;
 
-    // 先把攒着的那一帧发出去，保证主机已经建立了对应的触点。这一帧带的仍然是变化
-    // 之前的按钮状态 —— 状态是在它之后才变的，顺序正确。
+    // Flush the pending frame so the host knows the contact before its button
+    // changes. That frame correctly retains the previous button state.
     sendPendingTouchpadFrame();
 
-    // 按钮状态必须挂在一个真实存在的触点上：
-    //   - Frame 模式：Sunshine 看到 contactCount == 0 直接返回，零触点帧里的
-    //     按钮状态永远不会被处理
-    //   - Individual 模式：BUTTON_ONLY 只能更新一个已经存在、且 pointerId 相同的
-    //     活动触点，写死的 0 通常匹配不到任何触点
-    // 所以这里复制当前的活动触点，把事件类型改成 MOVE（位置不变，只是借这一帧把
-    // 按钮状态带过去），Windows 的触控板路径也是这个思路。
+    // Button updates need an existing contact. Frame mode ignores contactCount == 0;
+    // individual BUTTON_ONLY updates require a matching active pointerId. Copy the
+    // active contact into a stationary MOVE frame carrying the new button state,
+    // matching the Windows touchpad path.
     NativeTouchpadContact contacts[MAX_TOUCHPAD_FRAME_CONTACTS];
     int contactCount = 0;
     for (auto it = m_ActiveTouchpadContacts.cbegin();
@@ -260,8 +257,8 @@ bool SdlInputHandler::sendMacTouchpadButtonState(bool down)
     }
 
     if (contactCount == 0) {
-        // 没有活动触点就没法把按钮状态送到主机。报告失败，调用方不会拦截原始的
-        // SDL 鼠标事件，点击照常从普通鼠标通道发出去 —— 总比两边都收不到强。
+        // Without an active contact, report failure so ordinary SDL mouse events
+        // can deliver the click instead of losing it in both paths.
         SDL_LogDebug(SDL_LOG_CATEGORY_INPUT,
                      "No active touchpad contact for macOS button state; "
                      "leaving the mouse event to the pointer path");
@@ -270,7 +267,7 @@ bool SdlInputHandler::sendMacTouchpadButtonState(bool down)
 
     sendNativeTouchpadContacts(contacts, contactCount, true, buttonState);
 
-    // 降级到软件指针说明主机压根不支持触控板协议，这次按钮状态没送到。
+    // Software-pointer fallback means the host lacks touchpad support; no button update was sent.
     return m_NativeTouchpadTransport != NTT_SOFTWARE_POINTER;
 }
 
@@ -760,9 +757,8 @@ void SdlInputHandler::sendPendingTouchpadFrame()
     }
     uint8_t buttonState = 0;
 #ifdef HAVE_MACOS_NATIVE_TOUCHPAD
-    // 最后一根手指抬起时强制带上「按钮已松开」。Mac 触控板的物理按压离不开手指，
-    // 手指走了按钮必然是松的；而且这时候再收到 SDL 的鼠标释放也已经没有活动触点
-    // 可挂，那条释放就发不出去 —— 主机会一直以为按着。
+    // Release the button with the final finger. A later SDL release has no active
+    // contact to attach to, which would otherwise leave the host button stuck down.
     if (m_MacTouchpadButtonDown && m_ActiveTouchpadContacts.isEmpty()) {
         m_MacTouchpadButtonDown = false;
     }

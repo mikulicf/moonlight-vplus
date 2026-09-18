@@ -6,17 +6,15 @@ import ".."
 import StreamingPreferences 1.0
 import SystemProperties 1.0
 
-// 「显示」分类：画面怎么呈现在这块屏幕上 —— 窗口模式、垂直同步、帧同步，以及 HDR。
+// Display settings: window mode, V-Sync, frame pacing, and HDR presentation.
 //
-// 这些原本挤在「基本设置」里。那一页同时装着「传多少数据」（分辨率、帧率、码率）和
-// 「怎么显示」两类完全不同的问题，加上 HDR 亮度那张大卡，一屏根本读不完。按用户找
-// 设置时的问法拆开：调清晰度去基本设置，调全屏/撕裂/HDR 来这里。
+// Keep presentation settings separate from stream resolution, frame rate, and bitrate.
+// The large HDR card has its own space here rather than crowding Basic settings.
 Column {
     id: displayPage
 
-    // 换界面语言时要重建窗口模式下拉的文案。信号由 SettingsView 转发过来 ——
-    // 原来这段在基本设置页里，直接连的是 basicPage.languageChanged；搬过来之后那个 id
-    // 不在本文件作用域里，Component.onCompleted 一执行就是 ReferenceError。
+    // SettingsView forwards language changes so this page can rebuild window-mode labels.
+    // Do not reference basicPage, which is outside this component's scope.
     signal languageChanged()
 
     width: parent ? parent.width : 0
@@ -181,10 +179,10 @@ Column {
             }
         }
 
-        // HDR 亮度卡片体量太大，原样保留在自己的文件里
+        // Keep the large HDR brightness card in its own component.
         Item {
             width: parent.width
-            // 同样不能用 visible，见 SettingsCard.hasVisibleContent 的注释
+            // Do not use visible here; see SettingsCard.hasVisibleContent.
             visible: hdrModeRow.applicable
             height: visible ? hdrCard.height : 0
 

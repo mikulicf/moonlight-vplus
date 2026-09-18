@@ -3,8 +3,8 @@ import "."
 import ".."
 import "../theme"
 
-// 枚举选择行。恢复索引和用户写回严格分离：selectedValue 变化只更新
-// currentIndex，只有下拉框的 activated 信号才向外发送 valueActivated。
+// Separate model restoration from user edits: selectedValue updates currentIndex,
+// while only the dropdown's activated signal emits valueActivated.
 SettingsRow {
     id: row
 

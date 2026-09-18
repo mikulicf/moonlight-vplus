@@ -1,10 +1,9 @@
 import QtQuick 2.9
 import "../theme"
 
-// 一张设置卡片：方角硬投影面板 + 左侧强调粗条 + 宽字距标题，内容走默认属性。
+// Settings card: square panel, hard shadow, left accent bar, and spaced title; content is default.
 //
-// 前身是 GlassCard（半透明表面 + 顶部高光渐变）。新风格里卡片是不透明的硬物件，
-// 高光那层被删掉了 —— 它是 glassmorphism 的残留，和零模糊硬边的方向相反。
+// Replace the former translucent GlassCard and highlight gradient with an opaque square surface.
 Item {
     id: card
 
@@ -12,16 +11,15 @@ Item {
     property string subtitle: ""
     default property alias cardContent: contentColumn.data
 
-    // 卡片内是否还有适用的行。全部被过滤掉时整张卡自动隐藏。
+    // Hide the whole card when no applicable rows remain.
     //
-    // 这里必须看 applicable 这类「显式意图」，绝对不能看 visible。visible 是实际可见性：
-    // 设置页按分类切换时，父级一隐藏整页，所有子行的 visible 都会变成假，于是这里判定
-    // 卡片是空的、把卡片自己也隐藏掉；而卡片一旦隐藏，子行就再也不可能变回可见 ——
-    // 状态永久锁死，切回「基本设置」时整页就是空白的。
+    // Check explicit applicability, not effective visibility. Hiding a category makes
+    // all child rows invisible; using visible here would then hide the card itself,
+    // preventing those rows from becoming visible again when the category returns.
     readonly property bool hasVisibleContent: {
         for (var i = 0; i < contentColumn.children.length; i++) {
             var child = contentColumn.children[i]
-            // 没声明 applicable 的（比如直接塞进来的 Item 容器）一律算作有内容
+            // Items without an applicable property, such as containers, count as content.
             if (child.applicable === undefined || child.applicable) {
                 return true
             }
@@ -32,14 +30,14 @@ Item {
     width: parent ? parent.width : 0
     visible: hasVisibleContent
     height: visible ? implicitHeight : 0
-    // 底部多留出投影的高度，否则硬投影会压在下一张卡片的上沿
+    // Reserve shadow height so it cannot overlap the next card's top edge.
     implicitHeight: layout.implicitHeight + Theme.spaceLg * 2 + Theme.shadowOffset
 
     Panel {
         fill: Theme.surfaceLayer
         anchors {
             fill: parent
-            // 右下让出投影的位置，不然会溢出滚动区
+            // Keep the bottom-right shadow inside the scrolling area.
             rightMargin: Theme.shadowOffset
             bottomMargin: Theme.shadowOffset
         }

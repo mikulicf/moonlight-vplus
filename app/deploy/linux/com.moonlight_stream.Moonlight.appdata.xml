@@ -20,10 +20,10 @@
 		</ul>
 	</description>
 
-	<url type="homepage">https://github.com/qiin2333/moonlight-qt</url>
-	<url type="bugtracker">https://github.com/qiin2333/moonlight-qt/issues</url>
+	<url type="homepage">https://github.com/mikulicf/moonlight-vplus</url>
+	<url type="bugtracker">https://github.com/mikulicf/moonlight-vplus/issues</url>
 	<url type="help">https://github.com/moonlight-stream/moonlight-docs/wiki/Setup-Guide</url>
-	<url type="vcs-browser">https://github.com/qiin2333/moonlight-qt</url>
+	<url type="vcs-browser">https://github.com/mikulicf/moonlight-vplus</url>
 	<developer id="io.github.qiin2333">
 		<name>Moonlight V+ Project</name>
 	</developer>

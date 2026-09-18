@@ -52,7 +52,7 @@ def find_dualsense():
 
 def read_calibration(dev):
     # hidapi prepends the report ID; SDL requires >= 35 bytes of payload.
-    # hidapi 在缓冲区头部保留报告 ID;SDL 的字段偏移是含 ID 的,不要剥掉
+    # hidapi retains the report ID; SDL offsets include it, so do not strip it.
     data = dev.get_feature_report(FEATURE_REPORT_CALIBRATION, 64)
     if not data:
         return None, "feature report 0x05 returned no data"
@@ -110,8 +110,8 @@ def sample_rest(dev, seconds=3.0):
         if not buf or len(buf) < 22:
             time.sleep(0.001)
             continue
-        # 缓冲区含报告 ID:USB 0x01 的陀螺在 buf[16/18/20],
-        # 蓝牙增强报文 0x31 载荷从 buf[2] 起,陀螺在 buf[17/19/21]
+        # Including report ID: USB 0x01 gyro fields are at 16/18/20;
+        # enhanced Bluetooth 0x31 starts payload at 2, with gyro fields at 17/19/21.
         if buf[0] == 0x01:
             base = 16
         elif buf[0] == 0x31:

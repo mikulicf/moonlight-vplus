@@ -215,6 +215,7 @@ private:
     void hideQtOverlayMenu();
     void toggleQtOverlayMenu();
     bool isStreamingWindowVisible() const;
+    bool isStreamingWindowActive() const;
     void syncQtOverlayWindowsWithSdlWindowState();
     void dispatchQtMenuAction(OverlayMenuPanel::MenuAction action);
     void requestRuntimeBitrateChange(int bitrateKbps);
@@ -396,9 +397,9 @@ private:
     Uint32 m_DropAudioEndTime;
 
     Overlay::OverlayManager m_OverlayManager;
-    bool m_WasCapturedBeforeMenu;  // 菜单打开前鼠标是否处于捕获状态
-    bool m_DeferCaptureRestore;    // 延迟恢复鼠标捕获（全屏切换等）
-    bool m_PendingMicToggle;       // 延迟麦克风切换（避免堆损坏）
+    bool m_WasCapturedBeforeMenu; // Mouse capture state before opening the menu.
+    bool m_DeferCaptureRestore;   // Restore capture after fullscreen/state transitions.
+    bool m_PendingMicToggle;      // Defer microphone changes to avoid heap corruption.
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
     // Developer-only test harness. All replay/UI behavior lives behind this
     // boundary so production Session code keeps only integration hooks.
@@ -428,7 +429,7 @@ private:
     std::shared_ptr<FileMappingUx::MountState> m_FileMappingMountState;
     QString m_FileMappingMountPath;
     QString m_FileMappingSessionId;
-    Uint32 m_MenuCloseTicks;       // 菜单关闭时间戳（防抖）
+    Uint32 m_MenuCloseTicks;                        // Menu close timestamp for debounce.
     class ClipboardHelperClient* m_ClipboardHelper; // Bidirectional clipboard sync helper process; nullptr when stream not active
     std::mutex m_CursorUpdateMutex;
     std::shared_ptr<RemoteCursorUpdate> m_PendingCursorUpdate;

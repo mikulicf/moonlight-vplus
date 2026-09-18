@@ -16,7 +16,7 @@
           Manufacturer="Moonlight V+ Project"
           UpgradeCode="466fa35d-4be4-40ef-9ce5-afadc3b63bc5"
           HelpUrl="https://github.com/moonlight-stream/moonlight-docs/wiki/Setup-Guide"
-          UpdateUrl="https://github.com/qiin2333/moonlight-qt/releases"
+          UpdateUrl="https://github.com/mikulicf/moonlight-vplus/releases"
           DisableModify="yes"
           IconSourceFile="..\..\app\moonlight.ico">
 

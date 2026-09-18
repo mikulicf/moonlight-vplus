@@ -97,10 +97,9 @@ struct DualSenseOutputReport{
 
 #define TOUCHPAD_SCROLL_SUPPRESSION_TIMEOUT_MS 500
 
-// 主机（至少 Sunshine + DXGI 桌面复制）会把"光标可见"这一位翻来翻去：实测每秒五到
-// 十次成对的 hidden → shown，形状和 shapeId 都没变。照做就是肉眼可见的闪烁。所以隐藏
-// 要等它稳定这么久才生效，显示立即生效 —— 真正的隐藏（游戏自己藏光标）会一直保持，
-// 只是晚这么点生效，看不出来；而成对的抖动会被整段吞掉。
+// Some hosts rapidly alternate hidden/shown without changing shape, causing flicker.
+// Show immediately but require a stable hide for this debounce interval. Genuine
+// hides remain effective after the short delay; paired visibility noise is suppressed.
 #define REMOTE_CURSOR_HIDE_DEBOUNCE_MS 150
 
 #ifdef HAVE_MACOS_NATIVE_TOUCHPAD
@@ -192,7 +191,7 @@ public:
 
     void flushPendingTouchpadFrameEvent();
 
-    // 去抖窗口到期，把主机要求的隐藏落实下去
+    // Apply the host's hide request once the debounce interval expires.
     void flushPendingRemoteCursorHide();
 
     int getAttachedGamepadMask();
@@ -220,7 +219,7 @@ public:
 
     void updateRemoteCursor(const RemoteCursorUpdate& update);
 
-    // 显示器变化后按新的 backing 比例重建远端光标（只有 macOS 需要）
+    // Rebuild the remote cursor for a changed backing scale (macOS only).
     void refreshRemoteCursorScale();
 
     void synchronizeLocalCursorMode();
@@ -230,7 +229,7 @@ public:
     static
     QString getUnmappedGamepads();
 
-    // KeyCombo 枚举（公开以便 OverlayMenu 等外部组件调用）
+    // Public key combinations for overlay and other external controls.
     enum KeyCombo {
         KeyComboQuit,
         KeyComboUngrabInput,
@@ -246,7 +245,7 @@ public:
         KeyComboMax
     };
 
-    // 公开 performSpecialKeyCombo 以便从悬浮菜单调用
+    // Expose special key combinations to the floating menu.
     void performSpecialKeyCombo(KeyCombo combo);
 
     // Toggle gamepad mouse emulation for the first connected gamepad
@@ -308,14 +307,13 @@ private:
 
     void resetRemoteCursor();
 
-    // 换上新的远端光标并接手它的所有权，顺带放掉旧的那只
+    // Take ownership of the new cursor, install it, and free the old cursor.
     void installRemoteCursor(SDL_Cursor* cursor);
 
-    // 认位图里的标准形状，认出来就换成本机的系统光标。返回 false 表示没认出来，
-    // 调用方该回退去画主机位图。
+    // Recognize and install a native cursor; false asks the caller to use the host bitmap.
     bool tryUseNativeRemoteCursor(const RemoteCursorUpdate& update);
 
-    // 应用主机推来的显隐状态：显示立即生效，隐藏要等去抖窗口坐实。
+    // Apply host visibility: immediate show, debounced hide.
     void updateRemoteCursorVisibility(bool visible);
 
     void cancelPendingRemoteCursorHide();
@@ -410,15 +408,15 @@ private:
     std::atomic<int> m_LocalCursorMode;
     bool m_RemoteCursorVisible;
     SDL_Cursor* m_RemoteCursor;
-    // 上一次的识别结果。用来挡掉"主机重复推同一形状"时的无谓重建，也用来只在结果
-    // 变化时打一次未识别的度量日志。
+    // Last classification avoids rebuilding repeated shapes and limits diagnostic
+    // logging to changed results.
     NativeCursorShape m_LastCursorClass;
-    // 最后一份成功建出光标的位图形状，以及当时用的 backing 比例。换成系统光标时会
-    // 清掉 m_HasLastCursorShape —— 系统光标不受 backing 比例影响，不需要重建。
+    // Last successfully created bitmap and backing scale. Native cursors clear
+    // m_HasLastCursorShape because scale changes do not require reconstruction.
     RemoteCursorUpdate m_LastCursorShape;
     bool m_HasLastCursorShape;
     qreal m_RemoteCursorScale;
-    // 隐藏的去抖定时器。见 updateRemoteCursorVisibility()。
+    // Hide debounce timer; see updateRemoteCursorVisibility().
     SDL_TimerID m_RemoteCursorHideTimer;
 
     struct {

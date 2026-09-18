@@ -5,7 +5,7 @@ import QtQuick.Layouts 1.3
 import StreamingPreferences 1.0
 import SystemProperties 1.0
 
-// 从旧 SettingsView.qml 1030-1644 行原样抽出，仅改动根节点宽度绑定与外壳配色。
+// Extracted from the former SettingsView with only root width and shell colors adjusted.
 import "."
 import "../theme"
 import ".."
@@ -13,11 +13,11 @@ import ".."
 Item {
     id: hdrBrightnessCard
     width: parent.width
-    // 底部留出硬投影的高度
+    // Reserve room below for the hard shadow.
     height: hdrBrightnessContent.implicitHeight + Theme.spaceLg * 2 + Theme.shadowOffset
 
-    // 方角硬投影面板。数值不合法时整块的描边和粗条都转成珊瑚色 ——
-    // 比原来只换一圈 1px 描边更扫得见。
+    // Square panel and hard shadow. Invalid values change both border and accent
+    // bar to coral for clearer feedback than a thin border alone.
     Panel {
         anchors {
             fill: parent
@@ -30,7 +30,7 @@ Item {
         accentBarWidth: Theme.accentBar
     }
 
-    // 由外部注入：HDR 开关的当前状态（旧代码直接引用 SettingsView 里的 enableHdr id）
+    // The containing page supplies the HDR toggle state rather than an out-of-scope ID.
     property bool hdrEnabled: SystemProperties.supportsHdr && StreamingPreferences.enableHdr
 
     property bool manualMode: StreamingPreferences.hdrBrightnessMode === StreamingPreferences.HBM_MANUAL
@@ -187,7 +187,7 @@ Item {
             right: parent.right
             top: parent.top
             margins: Theme.spaceLg
-            // 躲开左侧粗条和右侧投影
+            // Leave room for the left accent bar and right shadow.
             leftMargin: Theme.spaceLg + Theme.accentBar
             rightMargin: Theme.spaceLg + Theme.shadowOffset
         }
@@ -221,8 +221,7 @@ Item {
                 }
             }
 
-            // 状态角标：方角，生效时用酸性绿（这是「正在生效」的状态标记），
-            // 未生效时用珊瑚色描边提示要先打开 HDR。
+            // A square status badge uses lime when active and a coral border when HDR is disabled.
             Rectangle {
                 implicitWidth: profileStatusLabel.implicitWidth + Theme.spaceSm * 2
                 implicitHeight: profileStatusLabel.implicitHeight + Theme.spaceXs * 2
@@ -300,7 +299,7 @@ Item {
                 inputMethodHints: Qt.ImhFormattedNumbersOnly
                 text: hdrBrightnessCard.formatBrightness(StreamingPreferences.hdrMaxBrightness, 3)
 
-                // FluentWinUI3 的 TextField 背景是圆角 + 底部一条粗下划线，换成方角框
+                // Replace FluentWinUI3's rounded, underlined TextField background with a square frame.
                 background: Rectangle {
                     radius: 0
                     color: Theme.ink
@@ -485,8 +484,8 @@ Item {
                     }
                 }
 
-                // PQ 刻度条。渐变保留 —— 它表达的是亮度斜坡，是信息不是装饰；
-                // 但圆角去掉，改成方角 + 1px 描边。
+                // Keep the PQ luminance gradient because it conveys information,
+                // but use square corners and a one-pixel border.
                 Rectangle {
                     id: hdrBrightnessScale
                     anchors {
@@ -604,7 +603,7 @@ Item {
                 }
             }
 
-            // 图例。三个色块跟着刻度条上的三段配色：暗青 → 青 → 酸性绿，全部方角。
+            // Square legend swatches match the range colors: dim teal, teal, and lime.
             RowLayout {
                 width: parent.width
                 spacing: Theme.spaceSm

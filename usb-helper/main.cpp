@@ -1,18 +1,17 @@
-// moonlight-usbd：macOS USB/IP 导出 helper。
+// moonlight-usbd: macOS USB/IP export helper.
 //
-// 反向隧道架构（docs/remote-usb-reverse-tunnel.md）中的本地 USB/IP 服务器：
-// Moonlight 主程序按需拉起本进程，把选定的本地 USB 设备经 usbipdcpp 导出成
-// 标准 USB/IP 服务；串流会话再把这个端口的字节流原样转发给 Sunshine。
+// Local USB/IP server for docs/remote-usb-reverse-tunnel.md. Moonlight starts it
+// on demand to export selected local devices through usbipdcpp, then forwards
+// the port's byte stream to the Sunshine host.
 //
-// 与父进程（Session/UsbForwardingLocalServer）的全部约定：
-//  - stdout 只写一行协议：serve 成功打 "READY <port>\n"，失败打
-//    "ERROR {json}\n"；之后 stdout 永不再写（所有日志——包括 usbipdcpp 内部
-//    的 spdlog——一律走 stderr）。
-//  - 进程生命周期由父进程控制：关闭 stdin（EOF）或发 SIGTERM/SIGINT 优雅退出。
-//  - 退出码：0 干净退出；1 用法/内部错误；2 设备未找到/绑定失败；
-//    3 监听失败；4 设备被系统占用。
+// Parent-process contract (Session/UsbForwardingLocalServer):
+// - stdout emits one READY <port> or ERROR {json} line, then remains silent.
+//   All logging, including usbipdcpp's spdlog output, goes to stderr.
+// - stdin EOF or SIGTERM/SIGINT requests graceful shutdown.
+// - Exit codes: 0 clean; 1 usage/internal error; 2 device missing/bind failure;
+//   3 listen failure; 4 device occupied by the system.
 //
-// 三个子命令：
+// Three subcommands:
 //   moonlight-usbd --version
 //   moonlight-usbd list --json
 //   moonlight-usbd serve --bind <busid> [--bind <busid>...] --listen <host:port>
@@ -38,8 +37,7 @@ namespace {
 
 sigset_t kTerminationSignals;
 
-// JSON 字符串转义。设备描述符文本只会出现常规字符，这里按 RFC 8259 处理
-// 必转义字符，非 ASCII 按 UTF-8 原样透传。
+// Escape JSON strings per RFC 8259, preserving non-ASCII UTF-8 descriptor text.
 std::string jsonEscape(const std::string& value)
 {
     std::string escaped;
@@ -66,7 +64,7 @@ std::string jsonEscape(const std::string& value)
     return escaped;
 }
 
-// stdout 单行 ERROR（协议约定的失败路径）。
+// Emit the protocol's single-line ERROR response on stdout.
 void printErrorLine(std::string_view error, std::string_view busId = {},
                     int code = 0, const std::string& detail = {})
 {
@@ -83,9 +81,8 @@ void printErrorLine(std::string_view error, std::string_view busId = {},
     std::cout << "}\n" << std::flush;
 }
 
-// busid 生成。必须与 usbipdcpp::get_device_busid（include/usbipdcpp/LibusbHandler/
-// tools.h）保持字节级一致：find_by_busid 用字符串匹配反查设备，两边算法漂移
-// 会导致 list 输出的 busid 在 serve 时绑不上。
+// Match usbipdcpp::get_device_busid byte-for-byte. find_by_busid compares strings,
+// so a differing algorithm would make listed devices impossible to serve.
 std::string deviceBusId(libusb_device* device)
 {
     uint8_t ports[8];
@@ -118,10 +115,9 @@ std::string stringDescriptor(libusb_device_handle* handle, uint8_t index)
     return std::string(buffer, static_cast<size_t>(length));
 }
 
-// 占用探测：对 active 配置的每个接口做一次 claim/release。macOS 上被系统
-// 驱动（HID/存储/摄像头栈）或其他进程持有的接口 claim 返回 LIBUSB_ERROR_BUSY。
-// 任一接口 claim 失败即视为占用。绝不做内核驱动 detach：Darwin 上需要 root，
-// 属于未来特权 helper 的范畴。
+// Claim/release each active interface to detect occupancy. System drivers or
+// other processes can return LIBUSB_ERROR_BUSY; any claim failure means occupied.
+// Never detach kernel drivers here: Darwin requires a privileged helper for that.
 bool interfacesClaimable(libusb_device* device, libusb_device_handle* handle)
 {
     libusb_config_descriptor* config = nullptr;
@@ -145,7 +141,7 @@ bool interfacesClaimable(libusb_device* device, libusb_device_handle* handle)
     return claimable;
 }
 
-// 独立探测（不持有其他 handle 时用，如 serve 的 fail-fast 检查）。
+// Independent occupancy probe when no other handle is held, including serve's early check.
 bool deviceClaimable(libusb_device* device)
 {
     libusb_device_handle* handle = nullptr;
@@ -175,7 +171,7 @@ int runList()
         if (libusb_get_device_descriptor(device, &descriptor) != LIBUSB_SUCCESS) {
             continue;
         }
-        // hub 不导出（usbipdcpp skip_hub 语义；共享 hub 本身没有意义）。
+        // Do not export hubs, matching usbipdcpp's skip_hub behavior.
         if (descriptor.bDeviceClass == LIBUSB_CLASS_HUB) {
             continue;
         }
@@ -204,7 +200,7 @@ int runList()
         json += ",\"vid\":" + std::to_string(descriptor.idVendor);
         json += ",\"pid\":" + std::to_string(descriptor.idProduct);
         json += ",\"vidPid\":\"";
-        json += vidPid; // %04x:%04x 自产，无需转义
+        json += vidPid; // Generated %04x:%04x text needs no escaping.
         json += "\"";
         json += ",\"serial\":\"" + jsonEscape(serial) + "\"";
         json += ",\"manufacturer\":\"" + jsonEscape(manufacturer) + "\"";
@@ -222,21 +218,21 @@ int runList()
 int runServe(const std::vector<std::string>& bindBusIds,
              const std::string& listenHost, uint16_t listenPort)
 {
-    // 默认配置即所需：skip_hub=true、auto_bind_hotplug=false（热插拔监控仍会
-    // 清理已绑定的失效设备，只是不会自动把新设备加进来）。
+    // Defaults are appropriate: skip_hub=true and auto_bind_hotplug=false.
+    // Hotplug still cleans up disconnected bindings without automatically adding devices.
     usbipdcpp::LibusbServerConfig config;
     usbipdcpp::LibusbServer server(config);
 
     for (const std::string& busId : bindBusIds) {
-        // find_by_busid 返回带引用计数的 device；bind_host_device 接管该引用，
-        // 调用方不要 unref（与上游 examples/libusb_server 的用法一致）。
+        // bind_host_device takes ownership of find_by_busid's reference.
+        // Do not unref afterward, matching upstream's libusb_server example.
         libusb_device* device = usbipdcpp::LibusbServer::find_by_busid(busId);
         if (device == nullptr) {
             printErrorLine("device_not_found", busId);
             return 2;
         }
-        // fail-fast：被系统占用的设备就算 READY 了也会在客户端 attach 时挂掉，
-        // 不如现在就报清楚。此路径 bind_host_device 还没接管引用，自己收尾。
+        // Reject occupied devices before READY, since client attachment would fail.
+        // bind_host_device has not taken ownership yet, so release our reference here.
         if (!deviceClaimable(device)) {
             libusb_unref_device(device);
             printErrorLine("device_occupied", busId);
@@ -257,14 +253,13 @@ int runServe(const std::vector<std::string>& bindBusIds,
         return 3;
     }
 
-    // 端口传 0 时由系统分配；start() 之后查询实际端口。
+    // Port zero lets the OS select a port; query it after start().
     std::cout << "READY " << server.get_server().endpoint().port() << std::endl;
 
-    // 退出条件：stdin EOF（父进程关闭管道）或 SIGTERM/SIGINT。stdin 监视线
-    // 线程用 detach：EOF 时它 kill(getpid(), SIGTERM) 唤醒主线程的 sigwait，
-    // 进程退出时线程随之消亡；反过来信号先到时它可能永远阻塞在 read 上，
-    // join 会卡死。注意必须用 kill 而非 raise：raise 是线程定向信号
-    // （pthread_kill(self)），只会挂起到本监视线程，sigwait 根本收不到。
+    // Stop on stdin EOF or SIGTERM/SIGINT. The detached stdin watcher sends
+    // kill(getpid(), SIGTERM) to wake the main thread's sigwait. Do not join it:
+    // a signal may arrive first while read remains blocked. Use kill, not raise,
+    // because a thread-directed signal would never reach the main thread's sigwait.
     std::thread stdinWatcher([] {
         std::string line;
         while (std::getline(std::cin, line)) {
@@ -292,8 +287,8 @@ void usage()
 
 int main(int argc, char** argv)
 {
-    // 第一件事：usbipdcpp 内部用 spdlog 默认 logger（指向 stdout）打日志，
-    // 而 stdout 是父进程解析的行协议通道，必须整个重定向到 stderr。
+    // Redirect spdlog's default stdout logger to stderr before any work.
+    // stdout is reserved for the parent process's line protocol.
     spdlog::set_default_logger(spdlog::stderr_color_mt("moonlight-usbd"));
     spdlog::set_level(spdlog::level::info);
 

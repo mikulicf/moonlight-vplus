@@ -153,8 +153,7 @@ QVariantList ComputerModel::getConnectionAddressesForComputer(int computerIndex)
         return addresses;
     }
 
-    // 和 AppView 那边共用一份构造逻辑：两边喂的是同一个 QML 组件，
-    // 条目形状和「哪一项算选中」的判定必须一致。
+    // Share AppView's entry construction because both use the same QML selector and rules.
     return AppModel::buildConnectionAddressList(m_Computers[computerIndex]);
 }
 
@@ -165,7 +164,7 @@ bool ComputerModel::hasMultipleConnectionAddresses(int computerIndex) const
         return false;
     }
 
-    // 数的是全部已知地址，不只是验证过的 —— 用户应该总能从所有地址里挑。
+    // Count every known address, including unverified ones, so all remain selectable.
     return m_Computers[computerIndex]->uniqueAddresses().count() > 1;
 }
 

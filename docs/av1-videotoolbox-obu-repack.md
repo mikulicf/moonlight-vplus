@@ -1,27 +1,18 @@
-# AV1 + HDR 在 VideoToolbox 上黑屏：起因与移植到 iOS 的做法
+# AV1 HDR black screens in VideoToolbox: cause and iOS integration
 
-> 这份文档是给 **moonlight-ios**（以及任何直接用 VideoToolbox 解码的 Apple 平台客户端）看的。
-> moonlight-qt 侧的修复见 [#168](https://github.com/qiin2333/moonlight-qt/pull/168)，
-> 实现文件是 `app/streaming/video/av1obu.{h,cpp}`。
+This document is for **moonlight-ios** and other Apple-platform clients that decode with VideoToolbox. The Moonlight Qt fix is in [upstream PR #168](https://github.com/qiin2333/moonlight-qt/pull/168), implemented in `app/streaming/video/av1obu.{h,cpp}`. The observations and validation results below are from that upstream investigation.
 
-## TL;DR
+## Overview
 
-NVENC 在 **AV1 HDR** 路径下会把一帧拆成 `OBU_FRAME_HEADER(3)` + `OBU_TILE_GROUP(4)` 两个 OBU，
-而 SDR 路径下发的是合并的 `OBU_FRAME(6)`。**VideoToolbox 吞不下拆开的那种**，每一帧都返回
-`kVTVideoDecoderMalfunctionErr (-12911)`，一帧都解不出来 → 黑屏。
+In the observed **AV1 HDR** path, NVENC splits a frame into `OBU_FRAME_HEADER(3)` and `OBU_TILE_GROUP(4)`. Its SDR path emits a combined `OBU_FRAME(6)`. VideoToolbox rejects the split form, returning `kVTVideoDecoderMalfunctionErr (-12911)` for every frame and producing a black screen.
 
-修法：**在送进 VideoToolbox 之前，把这两个 OBU 合并回单个 `OBU_FRAME`**。纯字节搬运，
-不需要解析熵编码内容，唯一的位级操作是清掉一个停止位。本文附完整可直接使用的 C 实现。
+The fix combines the two OBUs into one `OBU_FRAME` **before submitting the temporal unit to VideoToolbox**. It moves bytes without parsing entropy-coded data; the only bit-level operation clears a stop bit. A complete standalone C implementation is included below.
 
-这跟 HDR10+ 没关系。触发条件是**编码器选了拆开的 OBU 打包**，目前已知 NVENC 在 AV1 HDR
-路径下会这么发（AMF 不会，NVENC 的 AV1 SDR 也不会）。只要你的客户端支持 AV1 且用
-VideoToolbox 解码，连 NVENC 主机开 HDR 就会中招；换个别的编码器如果也这么打包，同样会中。
+The trigger is the encoder's OBU packaging, not HDR10+ metadata. The observed NVENC AV1 HDR stream uses the split form; AMF and NVENC AV1 SDR use the combined form. Any encoder emitting the same split layout can encounter this decoder limitation, so the workaround should follow the bitstream layout rather than an encoder-name check.
 
----
+## Symptoms
 
-## 症状
-
-macOS 上表现为（iOS 上的日志文本会不同，但错误码一样）：
+Typical macOS logs are shown below. iOS log text can differ, but the decoder error code is the same.
 
 ```text
 vt decoder cb: output image buffer is null: -12911
@@ -29,72 +20,46 @@ HW accel end frame fail.
 avcodec_send_packet() failed
 ```
 
-`-12911` = `kVTVideoDecoderMalfunctionErr`。特征是**每一帧都失败，成功率为零**，
-不是偶发花屏或丢帧。客户端如果有「解码失败 → 重启解码器 → 请求 IDR」的逻辑，
-就会陷入死循环，用户看到的就是纯黑屏 + 偶尔闪一下。
+`-12911` is `kVTVideoDecoderMalfunctionErr`. In this failure, **every frame fails**; it is not intermittent corruption or packet loss. A client that responds by restarting the decoder and requesting an IDR can loop indefinitely, showing a black screen with occasional flashes.
 
-HEVC（包括 HEVC HDR / HDR10+）在同一台主机上完全正常，所以很容易被误判成
-「HDR 元数据的问题」或「主机的问题」。都不是。
+HEVC, including HEVC HDR and HDR10+, worked on the same host. That comparison helps distinguish this AV1 packaging problem from a general HDR or host failure.
 
-## 根因
+## Root cause
 
-同一台 M4、同一台 NVENC 主机 `212333.monster`，对比首帧的 OBU 序列：
+The upstream investigation compared the first-frame OBU sequences using the same M4 client and NVENC host, with an AMF host as another reference:
 
-| 场景 | 首帧 OBU 序列 | 结果 |
+| Stream | First-frame OBU sequence | Observed result |
 |---|---|---|
-| AV1 8-bit **SDR**（NVENC） | `TD(2), SeqHdr(1), FRAME(6)` | 正常，连跑数小时 |
-| AV1 10-bit **HDR**（NVENC） | `TD(2), SeqHdr(1), FRAME_HEADER(3), TILE_GROUP(4)` | **每帧 -12911** |
-| AV1 10-bit HDR（**AMF** 主机） | `TD(2), SeqHdr(1), METADATA(5), FRAME(6)` | 正常 |
-| HEVC HDR10+（NVENC） | — | 正常 |
+| NVENC AV1 8-bit SDR | `TD(2), SeqHdr(1), FRAME(6)` | Worked for hours. |
+| NVENC AV1 10-bit HDR | `TD(2), SeqHdr(1), FRAME_HEADER(3), TILE_GROUP(4)` | Every frame failed with `-12911`. |
+| AMF AV1 10-bit HDR | `TD(2), SeqHdr(1), METADATA(5), FRAME(6)` | Worked. |
+| NVENC HEVC HDR10+ | Not applicable | Worked. |
 
-唯一的变量就是 **frame header 和 tile group 有没有合并成一个 `OBU_FRAME`**。
-分辨率、tile 数、码率、丢包都排除了：4K 和 1080p 都复现，0% 丢包也复现。
+The relevant distinction was whether the frame header and tile group were combined into `OBU_FRAME`. Resolution, tile count, bitrate, and packet loss were ruled out in that investigation: both 4K and 1080p reproduced the problem, including with 0% packet loss.
 
-按 AV1 spec，`OBU_FRAME` 只是 `OBU_FRAME_HEADER` + `OBU_TILE_GROUP` 的等价打包形式
-（spec 5.10 `frame_obu()`），两者语义完全相同，合法解码器**应该**都支持。
-VideoToolbox 显然只实现了 `OBU_FRAME` 这条路。
+AV1 specification section 5.10, `frame_obu()`, defines `OBU_FRAME` as an equivalent packaging of the frame header and tile group. Both forms are valid. The observed VideoToolbox decoder accepted only the combined form in this case.
 
-### 排除掉的几个嫌疑
+### Other suspected causes
 
-**HDR10+ 元数据不是元凶。** 最初我以为是 metadata OBU 夹在 frame header 和 tile group
-中间违反了 HDR10+ AV1 Metadata Handling Specification 的顺序要求。但 1080p 那次会话的
-**第一个 IDR 完全没有 metadata OBU**（序列就是 `2,1,3,4`），照样 -12911。
-元数据的存在与位置都不是触发条件。
+**HDR10+ metadata:** Initially, a metadata OBU between the frame header and tile group appeared to violate the HDR10+ AV1 Metadata Handling Specification's ordering requirement. However, the first IDR in the 1080p session contained no metadata at all: its sequence was `2,1,3,4`, and it still failed with `-12911`. Neither metadata presence nor placement was necessary to trigger the failure.
 
-**FFmpeg 无辜**（如果你的客户端也走 FFmpeg 的 VT hwaccel）。
-`videotoolbox_av1.c` 的 `end_frame` 按 `start_unit..nb_unit` 把整段 OBU 原样拼给 VT，
-`av1dec.c` 里 `s->nb_unit = i + 1`（`i` 为 tile group 下标）把 tile group 算进了范围，
-一个 OBU 都没漏。iOS 如果是自己构造 `CMBlockBuffer` 直接喂 `VTDecompressionSession`，
-那更是原样透传，同样中招。
+**FFmpeg:** For clients using FFmpeg's VideoToolbox hardware acceleration, `videotoolbox_av1.c` passes the complete OBU range from `start_unit` through `nb_unit` in `end_frame`. In `av1dec.c`, `s->nb_unit = i + 1`, where `i` is the tile-group index, includes that tile group. No OBU was omitted. An iOS client building `CMBlockBuffer` and feeding `VTDecompressionSession` directly can encounter the same issue when passing the original bytes through.
 
-**主机端拧不动。** `nvEncodeAPI.h` 的 `NV_ENC_CONFIG_AV1` / `NV_ENC_PIC_PARAMS_AV1` 里
-**没有任何字段控制 OBU 打包方式**（没有 `enableFrameOBU` 之类），由驱动自己决定。
-所以只能修在客户端 —— 好处是对**任何**主机都生效：上游 Sunshine、老驱动、GFN 都不用改。
+**Encoder configuration:** The inspected `NV_ENC_CONFIG_AV1` and `NV_ENC_PIC_PARAMS_AV1` structures in `nvEncodeAPI.h` provided no control such as `enableFrameOBU` for selecting this packaging. The driver chooses it. A client-side adaptation can therefore support hosts that cannot be modified, including existing Sunshine versions, older drivers, and hosted services.
 
-### 时间线
+### Historical context
 
-主机端 AV1 的静态 HDR 元数据（`pMasteringDisplay` / `pMaxCll`）是 foundation-sunshine
-`a3bd8799`（2025-12-26，#389）加进去的。**macOS/iOS 上的 AV1 HDR 很可能从 2025 年 12 月起
-就一直是黑的**，不是最近哪个 PR 弄坏的。如果 iOS 那边有「AV1 开 HDR 就黑屏」的老 issue，
-八成就是这个。
+foundation-sunshine added AV1 static HDR metadata through `pMasteringDisplay` and `pMaxCll` in commit `a3bd8799`, PR #389, on December 26, 2025. The upstream author suspected that AV1 HDR on affected macOS/iOS clients might have failed since then rather than being a recent regression. That timing was an inference, not a demonstrated first-failure date; older issues with the same symptoms need their own confirmation.
 
----
+## Repacking the temporal unit
 
-## 修法
+Before passing a temporal unit to VideoToolbox, combine `FRAME_HEADER + TILE_GROUP` into one `OBU_FRAME` in place. Move any intervening metadata OBUs before the combined frame.
 
-在**把 temporal unit 交给 VideoToolbox 之前**，就地把
-`FRAME_HEADER + TILE_GROUP` 合并成单个 `OBU_FRAME`，顺带把夹在中间的 metadata OBU
-提到合并帧之前。
+### 1. Convert trailing bits correctly
 
-### 三个关键点
+The payload of `OBU_FRAME_HEADER` ends with `trailing_bits(obu_size * 8 - payloadBits)`: a single `1` stop bit followed by zero padding to the end declared by `obu_size`. Because that bound comes from `obu_size`, legal padding can span complete bytes. The final payload byte can therefore be `0x00`.
 
-**1. `trailing_bits()` 必须处理**（唯一的位级操作，漏掉会解出花屏或直接失败）
-
-`OBU_FRAME_HEADER` 的载荷末尾是 `trailing_bits(obu_size * 8 - payloadBits)`：一个 `1` 停止位，
-然后**一路补零到 `obu_size` 声明的末尾**。注意 `nbBits` 是按 `obu_size` 算的，所以编码器如果把
-`obu_size` 报大了，补零可以跨越整字节 —— **载荷最后一个字节合法地是 `0x00`**。
-
-而在 `OBU_FRAME` 内部，`frame_header_obu()` 后面跟的是 `byte_alignment()`：
+Inside `OBU_FRAME`, `frame_header_obu()` is followed instead by `byte_alignment()`:
 
 ```c
 byte_alignment() {
@@ -103,68 +68,46 @@ byte_alignment() {
 }
 ```
 
-它**只补到下一个字节边界，永远跨不过一整个字节**。所以合并时要做三件事：
+This pads only to the next byte boundary and never adds a full extra byte. Repacking must therefore:
 
-1. 清掉停止位 —— 即**最后一个非零字节**的最低置位位（`lastByte &= lastByte - 1`，例 `0x88` → `0x80`）；
-2. **丢掉它后面所有的整零字节**。留着的话，它们会被挪进 `tile_group_obu()` 的载荷里，把帧解坏。
-3. 如果这个字节的**原值恰好是 `0x80`**，**把它也整个丢掉**，而不是留一个零字节在那里。
+1. Clear the lowest set bit in the last nonzero byte: `lastByte &= lastByte - 1`, for example `0x88` becomes `0x80`.
+2. Remove every complete zero byte after that byte. Retaining them would insert padding into the tile-group payload and corrupt the frame.
+3. If the byte's **original value is exactly `0x80`**, remove that entire byte too.
 
-第 3 条特别容易漏：`frame_header_obu()` 正好在字节边界结束时，`trailing_bits()` 补出来的就是
-整个 `0x80` 字节，概率大约 1/8，不是边角情况。而合并后 `byte_alignment()` 在这里一位都不补，
-所以那个字节必须消失。留成 `0x00` 跟第 2 条留着补零字节是**同一个 bug**，一样会解坏帧。
+The third case occurs when the frame-header payload ends on a byte boundary. `trailing_bits()` then adds a whole `0x80` byte, whereas `byte_alignment()` adds nothing. Keeping it as `0x00` has the same effect as retaining the extra padding bytes. A byte-aligned header is not an exceptional case; the upstream discussion used roughly one in eight possible bit alignments to illustrate why this branch matters.
 
-但判据必须是**原值等于 `0x80`**，不能是「清完停止位之后等于 `0x00`」—— 后者太宽。
-比如 `0x20`（`0010 0000`）清完也是 `0x00`，可它的高 2 位是**真实的载荷位**（值恰好为零），
-只是 `frame_header_obu()` 在这个字节里只用掉了 2 位。这时 `byte_alignment()` 会补满剩下的
-6 位，字节仍然存在，必须原样留成 `0x00`。丢掉它就会把 `tile_group_obu()` 整体前移一个字节。
-只有原值 `0x80` 时停止位落在字节的第一位，整个字节不含任何载荷位，才该消失。
+Test the original value against `0x80`, **not whether clearing the stop bit produces zero**. For example, `0x20` also becomes `0x00`, but its upper two zero bits are actual payload. The remaining six bits become alignment padding, so that byte must remain. Removing it would shift the entire tile group one byte too early. Only an original `0x80` has its stop bit in the first position and contains no payload bits.
 
-只做第 1 件事是**错的**，这是个很容易踩的坑。若整个载荷全是零（或只有一个停止位），
-说明码流非法，放弃重写。
+Clearing the stop bit alone is insufficient. If the payload is entirely zero, or consists only of a stop bit, reject the rewrite and leave the invalid stream unchanged.
 
-**2. 输出恒不变长，可以就地覆写**
+### 2. The output never grows
 
-- 旧开销：`2` 个 OBU 头 + `leb128(fh) + leb128(tg)`
-- 新开销：`1` 个 OBU 头 + `leb128(fh + tg)`
+- Original overhead: two OBU headers plus `leb128(fh)` and `leb128(tg)` length fields.
+- Combined overhead: one OBU header plus `leb128(fh + tg)`.
 
-因为 `leb128(a+b) <= leb128(a) + leb128(b)`，新开销恒小于旧开销，所以**输出永远不比输入长**，
-不需要额外分配缓冲区。搬运顺序从后往前（先 tile group 再 frame header），
-保证没有一次 `memmove` 会踩到后面还要读的字节。
+The combined length field needs no more bytes than the two original fields together. Removing a header and any trailing padding therefore never increases the buffer length. The implementation can rewrite in place without allocating an output buffer. It moves data from back to front, tile group before frame header, so no `memmove` overwrites bytes that a later move still needs to read.
 
-这里有个坑：算「原 OBU 头去掉长度字段之后还剩几字节」时，必须用**长度字段实际占的字节数**，
-不能拿 `leb128Size(payloadLength)` 反推。AV1 的 leb128 **允许非最短编码**（载荷长度 1
-可以写成 `81 00`），拿规范长度去减会少减一个字节，结果在合并头和载荷之间留下游离字节，
-整个 TU 的 OBU 边界就错位了。所以解析时要把实际读到的字节数存下来。
+When subtracting an OBU's length field from its header size, use the **actual encoded length-field size**, not a canonical size recomputed from the payload length. AV1 permits nonminimal LEB128 encodings: payload length 1 may be encoded as `81 00`. Subtracting only the canonical one-byte size would leave a stray byte between the new header and payload and misalign the temporal unit. Record the number of length bytes consumed during parsing.
 
-metadata 是唯一需要临时暂存的部分 —— 它要往前挪，而 frame header 的载荷要往后挪，
-两者会交叉。栈上 512 字节足够（HDR10+ T.35 / mastering display / MaxCLL 都远小于 100 字节）。
-这 512 字节算的是**所有待前移 metadata OBU 的头 + 载荷之和**：合计 **≤ 512 接受，≥ 513
-在任何拷贝发生之前就原样返回**，所以 `memcpy` 到栈缓冲永远不会越界。
+Metadata requires temporary storage because it moves earlier while the frame-header payload moves later. The implementation uses a 512-byte stack buffer; typical HDR10+ T.35, mastering-display, and MaxCLL payloads are well under 100 bytes. The bound includes **all headers and payloads of metadata OBUs being moved**. Totals of 512 bytes or less are accepted; 513 bytes or more return the untouched input before any copy occurs.
 
-**3. 保守匹配，不认识就别动**
+### 3. Match conservatively
 
-只处理「恰好一个 frame header，其后恰好一个 tile group 且位于 TU 末尾，两者之间只有 metadata」
-这一种布局。以下情况一律**原样返回、一个字节都不碰**：
+Rewrite only a temporal unit containing exactly one frame header followed by exactly one tile group at the end of the unit, with only metadata between them. Leave the input completely unchanged when it contains:
 
-- 已经是 `OBU_FRAME`（AMF 主机、NVENC 的 SDR 路径）
-- 多个 tile group（多 tile 分片传输）
-- 多帧 TU
-- 任何 OBU 的 `obu_has_size_field == 0`（长度不可解，动不得）
-- frame header 载荷全是 `0x00`，或者除了停止位什么都没有（码流非法）
-- 待前移的 metadata 合计超过 512 字节
-- frame header 和 tile group 的 `obu_extension_flag` 不一致，或扩展字节
-  （`temporal_id` / `spatial_id`）不同 —— 合并会沿用 frame header 的 OBU 头，
-  两者不一致就等于把 tile group 挪进了别的时域/空域层
+- An existing `OBU_FRAME`, as in the observed AMF and NVENC SDR streams.
+- Multiple tile groups or multiple frames.
+- An OBU with `obu_has_size_field == 0`, preventing safe length parsing.
+- A frame-header payload containing only zero bytes or only a stop bit.
+- More than 512 bytes of metadata to move.
+- Different `obu_extension_flag` values on the frame header and tile group, or different extension bytes containing `temporal_id` and `spatial_id`. The combined frame inherits the frame-header header, so combining mismatched extensions could move the tile group into another temporal or spatial layer.
 
-反过来说，命中重写的条件只跟**布局**有关，跟是哪个编码器无关：任何编码器只要发出
-「frame header + metadata + tile group」这种拆开的形式，都会被合并。上面列出的情况
-则一律一个字节都不碰。所以对已经发 `OBU_FRAME` 的码流（AMF、NVENC 的 SDR 路径）
-以及所有非 AV1 / 非 VideoToolbox 的路径，这段代码是零影响的空操作。
+The decision depends on layout, not encoder identity. Any encoder emitting the supported split layout can use this adaptation. Streams already containing `OBU_FRAME` return unchanged. Non-AV1 and non-VideoToolbox paths should not call the function.
 
-### 完整实现（纯 C，可直接拖进 Xcode 工程）
+### Complete standalone C implementation
 
-不依赖 FFmpeg、不依赖任何库，只用 `<stdint.h>` 和 `<string.h>`。
-头文件带 `extern "C"` 守卫，`.m` / `.mm` / `.cpp` 都能用。
+The implementation needs only `<stdint.h>` and `<string.h>` and has no FFmpeg or other library dependency. Its `extern "C"` guards allow use from Objective-C, Objective-C++, and C++ projects.
+
 
 **`av1obu.h`**
 
@@ -474,125 +417,101 @@ int repackAv1TemporalUnit(uint8_t* data, int length)
 }
 ```
 
-> 上面这份 C 版本我用 `clang -std=c99 -Wall -Wextra` 编过，零警告，
-> 并且用同一套 harness 跑出来跟 moonlight-qt 里的 C++ 版**逐字节一致**。
 
-### 接在哪里
+The upstream author reported compiling this C implementation with `clang -std=c99 -Wall -Wextra` without warnings and obtaining byte-identical output to the Moonlight Qt C++ implementation using the same test harness.
 
-调用点要满足两个条件：**整个 temporal unit 已经拼成一段连续内存**，且**还没交给 VideoToolbox**。
+### Integration point
 
-对 moonlight-common-c 的客户端来说这很好定位：AV1 的 DU **所有 buffer 都是
-`BUFFER_TYPE_PICDATA`**（见 `Limelight.h`，只有 H.264/HEVC 才会拆出 VPS/SPS/PPS 类型），
-所以在 `DecoderRendererSubmitDecodeUnit` 回调里把 `du->bufferList` 顺着 `next` 拼完之后，
-缓冲区里就是完整的一个 temporal unit。在这之后、构造 `CMBlockBuffer` 之前插一行：
+Call the function after the **entire temporal unit has been assembled into contiguous memory** and before submitting it to VideoToolbox.
+
+For clients using moonlight-common-c, every AV1 decode-unit buffer has type `BUFFER_TYPE_PICDATA`; see `Limelight.h`. Only H.264/HEVC use separate VPS/SPS/PPS buffer types. In `DecoderRendererSubmitDecodeUnit`, concatenate `du->bufferList` by following `next`. The resulting buffer contains the whole temporal unit. Insert this before constructing `CMBlockBuffer`:
 
 ```c
 if (needsAv1ObuRepack) {
     offset = repackAv1TemporalUnit(buffer, offset);
 }
-// 然后拿 offset 当长度去建 CMBlockBuffer / CMSampleBuffer
+// Use offset as the length when creating CMBlockBuffer / CMSampleBuffer.
 ```
 
-moonlight-qt 里就是这么接的（`ffmpeg.cpp` 的 `submitDecodeUnit()`，紧跟在
-`writeBuffer()` 循环之后、`m_Pkt->size = offset` 之前）。
+Moonlight Qt uses this position in `ffmpeg.cpp`'s `submitDecodeUnit()`, immediately after the `writeBuffer()` loop and before assigning `m_Pkt->size = offset`.
 
-**开关建议**：只在「AV1 + VideoToolbox」时置位，别无条件开。
+Enable the adaptation only for **AV1 with VideoToolbox**. Where VideoToolbox is the only decoder, as in the discussed iOS path, the format check is sufficient:
 
 ```c
 needsAv1ObuRepack = (videoFormat & VIDEO_FORMAT_MASK_AV1) != 0;
 ```
 
-iOS 上解码器只有 VideoToolbox 一条路，所以判 AV1 就够了。
-不建议再按「是否 HDR」收窄 —— 触发条件是编码器的打包选择，不是 HDR 本身，
-而且函数对已经是 `OBU_FRAME` 的码流是零成本空操作（解析几个 OBU 头就返回了）。
+Do not further restrict it to HDR. Packaging is the trigger, and streams already containing `OBU_FRAME` return after parsing a few headers without copying data.
 
-### 注意事项
+### Integration notes
 
-- **不要动 sequence header。** 重写只碰 frame header / tile group / metadata。
-  如果你从 sequence header 构造 `av1C` / `CMFormatDescription`，那条路完全不受影响。
-- **函数会就地修改缓冲区。** 确保传进去的是你自己的可写拼接缓冲，不是 moonlight-common-c
-  的 DU 内存。
-- **返回值是新长度，必须用它**，别继续用原来的 `offset`，否则尾部会多出 2 字节垃圾。
-- **性能可忽略。** 只解析 OBU 头 + 两次 `memmove`，4K 帧上是微秒级，
-  而且不匹配时连 `memmove` 都不会发生。
+- Leave the sequence header untouched. Repacking changes only the frame header, tile group, and metadata placement, so sequence-header-derived `av1C` and `CMFormatDescription` construction remains unchanged.
+- Pass your own writable assembly buffer. The function modifies it in place; do not pass moonlight-common-c's decode-unit storage directly.
+- Always use the returned length. Keeping the original `offset` leaves trailing bytes in the submitted packet; the basic example shrinks by two bytes.
+- The work is header parsing and byte moves. The upstream investigation reported microsecond-scale work for 4K frames, with no `memmove` at all when the layout does not match.
 
----
+## Validation
 
-## 验证
+### Unit cases
 
-### 单元层面
+The upstream harness covered the following cases. Repeat them when porting the implementation:
 
-我用的 harness 覆盖了这些用例，移植后建议照着跑一遍：
-
-| 用例 | 期望 |
+| Case | Expected result |
 |---|---|
-| 拆帧、无 metadata | `2,1,3,4` → `2,1,6`；长度 63→61；停止位 `0x88`→`0x80` |
-| 拆帧、带 metadata | `2,1,3,5,4` → `2,1,5,6`；metadata 前移，内容不变 |
-| 已是 `OBU_FRAME` | 原样返回，字节全等 |
-| AMF 布局 `2,5,6` | 原样返回，字节全等 |
-| 两个 tile group | 原样返回，字节全等 |
-| 只有 tile group、没有 frame header | 原样返回，字节全等 |
-| frame header 尾部有整零字节填充 | 零字节被截掉，输出与「没有填充」的同一帧**逐字节相同** |
-| frame header 载荷全为 `0x00` | 原样返回，字节全等 |
-| metadata 合计 512 字节 | 正常重写（边界内） |
-| metadata 合计 513 字节 | 原样返回，字节全等（拷贝前就退出） |
-| frame header 末字节正好是 `0x80` | 该字节被整个丢掉，不是写成 `0x00` |
-| frame header 末字节是 `0x20` 等其他单比特值 | 该字节**保留**并写成 `0x00`（高位是真实载荷位） |
-| 长度字段用非最短 leb128（如 `81 00`） | 输出与最短编码的同一帧**逐字节相同** |
-| fh / tg 扩展头不一致 | 原样返回，字节全等 |
-| 合并后长度跨 leb128 边界（如 203） | 长度字段写成 `cb 01`，总长 208→206 |
-| `obu_extension_flag` 置位 | 合并头 `0x36`，ext 字节原样保留，长度正确 |
+| Split frame without metadata | `2,1,3,4` becomes `2,1,6`; length 63 becomes 61; stop-bit byte `0x88` becomes `0x80`. |
+| Split frame with metadata | `2,1,3,5,4` becomes `2,1,5,6`; metadata moves earlier without changing its contents. |
+| Existing `OBU_FRAME` | Input is byte-for-byte unchanged. |
+| AMF layout `2,5,6` | Input is byte-for-byte unchanged. |
+| Two tile groups | Input is byte-for-byte unchanged. |
+| Tile group without a frame header | Input is byte-for-byte unchanged. |
+| Whole zero-byte padding after the frame header | Padding is removed; output exactly matches the same frame without padding. |
+| Entirely zero frame-header payload | Input is byte-for-byte unchanged. |
+| Metadata total of 512 bytes | Repacking succeeds at the supported boundary. |
+| Metadata total of 513 bytes | Input is unchanged; return occurs before copying. |
+| Original final frame-header byte is `0x80` | Remove the whole byte rather than replacing it with `0x00`. |
+| Original final byte is another single-bit value, such as `0x20` | Retain the byte as `0x00`; its upper bits contain real payload. |
+| Nonminimal LEB128 length, such as `81 00` | Output exactly matches the same frame with a minimal length encoding. |
+| Mismatched frame-header/tile-group extensions | Input is byte-for-byte unchanged. |
+| Combined payload crosses a LEB128 boundary, for example 203 bytes | Encode the length as `cb 01`; total length 208 becomes 206. |
+| `obu_extension_flag` set | Combined header is `0x36`; preserve the extension byte and calculate the correct length. |
 
-一个通用的自检：重写后从头把 OBU 走一遍，**消耗的字节数必须正好等于返回的新长度**。
+After every rewrite, parse the OBUs again and check that the total bytes consumed exactly equals the returned length.
 
-### 实机
+### Hardware validation
 
-连一台 NVENC 主机开 AV1 + HDR，主判据：
+For a new port, connect to an NVENC host with AV1 and HDR enabled. Check that:
 
-1. **出画、不黑**，且 `-12911` 出现 0 次。
-2. 如果你能打出 OBU 序列，应该从 `2,1,3,5,4` 变成 `2,1,5,6`。
-3. 顺带看一眼 HDR10+ 有没有被识别 —— metadata 前移之后正好满足
-   HDR10+ AV1 Metadata Handling Specification「metadata 须先于 frame header」的要求，
-   AV1 的动态元数据理应也能被取出来用上。
+1. Video is visible and no `-12911` decoder errors occur.
+2. If OBU logging is available, a split sequence such as `2,1,3,5,4` becomes `2,1,5,6`.
+3. HDR10+ metadata is recognized where provided. Hoisting it before the frame header also satisfies the ordering required by the HDR10+ AV1 Metadata Handling Specification.
 
-moonlight-qt 上的实测结果（M4、4K120、AV1 10-bit HDR、NVENC 主机）：
+The upstream Moonlight Qt test used an M4, an NVENC host, and a requested 4K120 AV1 10-bit HDR stream:
 
 ```text
-Video stream is 3840x2160x120 (format 0x2000)   # AV1 MAIN10，请求里 hdrMode=1
+Video stream is 3840x2160x120 (format 0x2000)   # AV1 MAIN10, hdrMode=1 in the request
 Using AV1 OBU repack for VideoToolbox
 [av1] Format videotoolbox_vld chosen by get_format().
 [av1] Total OBUs on this packet: 3.   OBU idx:0 type:2 / idx:1 type:1 / idx:2 type:6
 Received HDR10+ dynamic metadata from the AV1 bitstream
 ```
 
-- `-12911` / `output image buffer is null` / `HW accel end frame fail` /
-  `avcodec_send_packet() failed` **各 0 次**。
-- 整场会话里**没有出现过一个 `type:3` 或 `type:4`** —— 拆帧全部被合并掉了。
-- HDR10+ 那行**没有 `(ignored: ...)` 后缀**，说明渲染器真的取用了动态元数据。
-- 55.0 Rx / 55.0 De / 54.1 Rd，丢包 0.00%，解码 4.16ms。
+- No occurrences of `-12911`, `output image buffer is null`, `HW accel end frame fail`, or `avcodec_send_packet() failed` were recorded.
+- No `type:3` or `type:4` appeared after repacking during that session.
+- The HDR10+ message had no `(ignored: ...)` suffix, indicating that the renderer consumed the dynamic metadata.
+- Observed rates were 55.0 received, 55.0 decoded, and 54.1 rendered FPS, with 0.00% packet loss and 4.16 ms decode time. These are measured rates, distinct from the requested 120 FPS.
 
-注意这里渲染器是 Vulkan(libplacebo)，但硬解走的仍然是 `videotoolbox_vld`
-（日志里的 `AV1 decode get format: videotoolbox_vld`），所以命中的正是原来黑屏的那条路。
-判断开关时要看的是 **hwaccel 是不是 VideoToolbox**，不是渲染器是什么。
+The renderer was Vulkan/libplacebo, but hardware decoding still used `videotoolbox_vld`. Select the workaround according to the **hardware decoder**, not the renderer.
 
-**这份实测能证明什么、不能证明什么：** 它证明了合并逻辑在真实码流上有效、且没有引入回归。
-但日志里只看得到重写**之后**的结果，看不出这台编码器有没有把 `obu_size` 报大、
-在 frame header 尾部留下整字节补零 —— 也就是「截掉尾部整零填充」那条分支
-**是否被实机走到过，无法从日志判定**。那条分支目前由单元测试覆盖
-（有补零和无补零的同一帧输出逐字节相同）。它是纯收紧的改动：没有补零时行为与不做截断完全一致。
+These observations establish that repacking worked for that real stream without an observed regression in that session. They do not show whether the encoder emitted whole zero-byte padding after a frame header: the logs contain only the rewritten sequence. That branch was covered by unit tests comparing padded and unpadded forms of the same frame. When there is no such padding, trimming does not change the behavior.
 
-### 回归
+### Regression checks
 
-这三条路重写函数都会原样返回、一个字节都不碰，但还是各连一次更稳：
+Also test these paths, even though they should return unchanged or never call the function:
 
-- AMF 主机的 AV1 HDR（本来就发 `OBU_FRAME`）
-- NVENC 的 AV1 SDR（同上）
-- HEVC（`needsAv1ObuRepack` 为 false，一行都走不到）
+- AMF AV1 HDR, which already emits `OBU_FRAME` in the observed configuration.
+- NVENC AV1 SDR, which also emits `OBU_FRAME` in the observed configuration.
+- HEVC, for which `needsAv1ObuRepack` is false.
 
----
+## Separate observation
 
-## 附：一个顺带发现（不影响本问题）
-
-foundation-sunshine 的 `src/nvenc/common_impl/nvenc_base.cpp` 里，
-AV1 的 `outputMaxCll` / `outputMasteringDisplay` 是**无条件**设的 —— SDR 也设。
-看着像个独立的小 bug，但跟这次的黑屏无关，也不在本次修复范围内。
+In the inspected foundation-sunshine `src/nvenc/common_impl/nvenc_base.cpp`, AV1's `outputMaxCll` and `outputMasteringDisplay` were set unconditionally, including for SDR. The upstream investigation identified this as a possible separate issue. It was unrelated to the black-screen cause and outside the scope of this fix.

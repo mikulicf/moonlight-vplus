@@ -114,13 +114,13 @@ static StreamingPreferences::BackgroundSource decodeBackgroundSource(int value)
 {
     switch (value) {
     case StreamingPreferences::BGS_PHOTOGRAPHY:
-    case StreamingPreferences::BGS_ANIME:
     case StreamingPreferences::BGS_API:
     case StreamingPreferences::BGS_LOCAL:
     case StreamingPreferences::BGS_NONE:
         return static_cast<StreamingPreferences::BackgroundSource>(value);
     default:
-        return StreamingPreferences::BGS_PHOTOGRAPHY;
+        // Unknown and retired providers migrate to an offline background.
+        return StreamingPreferences::BGS_NONE;
     }
 }
 
@@ -329,9 +329,9 @@ void StreamingPreferences::reload()
                                                static_cast<int>(settings.value(SER_STARTWINDOWED, true).toBool() ? UIDisplayMode::UI_WINDOWED
                                                                                                                  : UIDisplayMode::UI_MAXIMIZED)).toInt());
     rememberWindowPosition = settings.value(SER_REMEMBERWINDOWPOSITION, true).toBool();
-    language = static_cast<Language>(settings.value(SER_LANGUAGE,
-                                                    static_cast<int>(Language::LANG_AUTO)).toInt());
-    const auto defaultBackgroundSource = defaultVer > 0 ? BGS_ANIME : BGS_PHOTOGRAPHY;
+    language = static_cast<Language>(
+        settings.value(SER_LANGUAGE, static_cast<int>(Language::LANG_EN)).toInt());
+    const auto defaultBackgroundSource = BGS_NONE;
     m_BackgroundSource = decodeBackgroundSource(settings.value(
                                                     SER_BACKGROUNDSOURCE,
                                                     static_cast<int>(defaultBackgroundSource)).toInt());
@@ -438,7 +438,7 @@ QString StreamingPreferences::backgroundImageApi() const
 void StreamingPreferences::setBackgroundImageApi(const QString &apiUrl)
 {
     const QString normalizedUrl = apiUrl.trimmed();
-    const BackgroundSource source = normalizedUrl.isEmpty() ? BGS_PHOTOGRAPHY : BGS_API;
+    const BackgroundSource source = normalizedUrl.isEmpty() ? BGS_NONE : BGS_API;
     const bool setupWasCompleted = m_BackgroundSetupCompleted;
     const bool changed = m_BackgroundImageApi != normalizedUrl ||
                          m_BackgroundSource != source;
@@ -460,7 +460,7 @@ QString StreamingPreferences::backgroundImageLocalPath() const
 void StreamingPreferences::setBackgroundImageLocalPath(const QString &path)
 {
     const QString normalizedPath = path.trimmed();
-    const BackgroundSource source = normalizedPath.isEmpty() ? BGS_PHOTOGRAPHY : BGS_LOCAL;
+    const BackgroundSource source = normalizedPath.isEmpty() ? BGS_NONE : BGS_LOCAL;
     const bool setupWasCompleted = m_BackgroundSetupCompleted;
     const bool changed = m_BackgroundImageLocalPath != normalizedPath ||
                          m_BackgroundSource != source;
@@ -520,11 +520,10 @@ void StreamingPreferences::resetBackgroundConfiguration()
     const bool setupWasCompleted = m_BackgroundSetupCompleted;
     const bool overlayOpacityChanged =
             m_BackgroundOverlayOpacity != DEFAULT_BACKGROUND_OVERLAY_OPACITY;
-    const bool changed = m_BackgroundSource != BGS_PHOTOGRAPHY ||
-                         !m_BackgroundImageApi.isEmpty() ||
+    const bool changed = m_BackgroundSource != BGS_NONE || !m_BackgroundImageApi.isEmpty() ||
                          !m_BackgroundImageLocalPath.isEmpty();
 
-    m_BackgroundSource = BGS_PHOTOGRAPHY;
+    m_BackgroundSource = BGS_NONE;
     m_BackgroundImageApi.clear();
     m_BackgroundImageLocalPath.clear();
     m_BackgroundOverlayOpacity = DEFAULT_BACKGROUND_OVERLAY_OPACITY;
