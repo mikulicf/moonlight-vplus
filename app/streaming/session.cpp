@@ -4825,7 +4825,9 @@ void Session::exec()
                false;
 #endif
     };
-    auto processQtEventsDuringStream = [this, managedStream, &lastQtEventPumpTicks,
+    auto processQtEventsDuringStream = [this, managedStream, QT_UI_EVENT_PUMP_INTERVAL_MS,
+                                        QT_MANAGED_EVENT_PUMP_INTERVAL_MS,
+                                        &lastQtEventPumpTicks,
                                         &qtUiNeedsEventProcessing](bool force = false) {
         const bool uiActive = qtUiNeedsEventProcessing();
         if (!uiActive && !managedStream) {
