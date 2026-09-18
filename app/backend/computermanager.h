@@ -236,6 +236,8 @@ public:
 
     void cancelManagedRequest(QString backend, QString requestId);
 
+    void retireManagedHosts(QString backend);
+
     QString generatePinString();
 
     void pairHost(NvComputer* computer, QString pin);

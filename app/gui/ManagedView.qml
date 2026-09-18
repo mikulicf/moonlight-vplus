@@ -21,6 +21,7 @@ Item {
         Qt.callLater(function() { root.forceActiveFocus(Qt.TabFocusReason) })
     }
     StackView.onDeactivating: passwordField.clear()
+    Component.onDestruction: ManagedBackend.releaseConnections()
 
     onActiveFocusChanged: {
         if (activeFocus) {
@@ -94,6 +95,7 @@ Item {
     function openMachine(computerIndex, computerName) {
         function fail(reason) {
             console.error("Failed to open AppView.qml: " + reason)
+            ManagedBackend.releaseConnections()
             localMessage = qsTr("Unable to open the app list for %1.").arg(computerName)
         }
 

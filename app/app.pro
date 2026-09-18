@@ -612,6 +612,12 @@ RESOURCES += \
     resources.qrc \
     qml.qrc
 
+greaterThan(QT_MAJOR_VERSION, 5) {
+    RESOURCES += qt6dialogs.qrc
+} else {
+    RESOURCES += qt5dialogs.qrc
+}
+
 TRANSLATIONS += \
     languages/qml_zh_CN.ts \
     languages/qml_de.ts \

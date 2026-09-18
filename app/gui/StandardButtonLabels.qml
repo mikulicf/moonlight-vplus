@@ -23,18 +23,17 @@ QtObject {
     readonly property string helpText: translatedText("Help", "Help")
     readonly property string yesText: translatedText("&Yes", "Yes")
     readonly property string noText: translatedText("&No", "No")
-    readonly property string translationRevision: [
+    readonly property string translationRevision: JSON.stringify([
         okText, cancelText, closeText, helpText, yesText, noText
-    ].join("\u0000")
+    ])
 
     function removeMnemonics(text) {
         // Match QPlatformTheme::removeMnemonics(), including East Asian
         // translations such as "Yes(&Y)" and escaped ampersands.
         var withoutSuffix = text.replace(/\s*[\(\uff08]&[^&][\)\uff09]/g, "")
-        var escapedAmpersand = "\u0001"
-        return withoutSuffix.replace(/&&/g, escapedAmpersand)
-                            .replace(/&/g, "")
-                            .replace(new RegExp(escapedAmpersand, "g"), "&")
+        return withoutSuffix.replace(/&&|&/g, function(match) {
+            return match === "&&" ? "&" : ""
+        })
     }
 
     function translatedText(sourceText, englishText) {

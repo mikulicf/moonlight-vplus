@@ -42,16 +42,37 @@ public:
 private:
     bool tryPollComputer(QNetworkAccessManager* nam, NvAddress address, bool& changed)
     {
-        NvHTTP http(address, m_Computer->managed ? m_Computer->activeHttpsPort : 0,
-                    m_Computer->serverCert, !m_Computer->isNvidiaServerSoftware, nam,
-                    m_Computer->uuid);
-        http.requireHttps(m_Computer->managed);
+        uint16_t httpsPort;
+        QSslCertificate serverCert;
+        bool managed;
+        bool useTrueUid;
+        QString uuid;
+        {
+            QReadLocker computerLock(&m_Computer->lock);
+            managed = m_Computer->managed;
+            if (managed && !m_Computer->managedAccessActive) {
+                return false;
+            }
+            httpsPort = managed ? m_Computer->activeHttpsPort : 0;
+            serverCert = m_Computer->serverCert;
+            useTrueUid = !m_Computer->isNvidiaServerSoftware;
+            uuid = m_Computer->uuid;
+        }
+        NvHTTP http(address, httpsPort, serverCert, useTrueUid, nam, uuid);
+        http.requireHttps(managed);
 
         QString serverInfo;
         try {
             serverInfo = http.getServerInfo(NvHTTP::NvLogLevel::NVLL_NONE, true);
         } catch (...) {
             return false;
+        }
+
+        {
+            QReadLocker computerLock(&m_Computer->lock);
+            if (m_Computer->managed && !m_Computer->managedAccessActive) {
+                return false;
+            }
         }
 
         NvComputer newState(http, serverInfo);
@@ -69,7 +90,26 @@ private:
 
     bool updateAppList(QNetworkAccessManager* nam, bool& changed)
     {
-        NvHTTP http(m_Computer, nam);
+        NvAddress activeAddress;
+        uint16_t httpsPort;
+        QSslCertificate serverCert;
+        bool managed;
+        bool useTrueUid;
+        QString uuid;
+        {
+            QReadLocker computerLock(&m_Computer->lock);
+            managed = m_Computer->managed;
+            if (managed && !m_Computer->managedAccessActive) {
+                return false;
+            }
+            activeAddress = m_Computer->activeAddress;
+            httpsPort = m_Computer->activeHttpsPort;
+            serverCert = m_Computer->serverCert;
+            useTrueUid = !m_Computer->isNvidiaServerSoftware;
+            uuid = m_Computer->uuid;
+        }
+        NvHTTP http(activeAddress, httpsPort, serverCert, useTrueUid, nam, uuid);
+        http.requireHttps(managed);
 
         QVector<NvApp> appList;
 
@@ -82,6 +122,12 @@ private:
             return false;
         }
 
+        {
+            QReadLocker computerLock(&m_Computer->lock);
+            if (m_Computer->managed && !m_Computer->managedAccessActive) {
+                return false;
+            }
+        }
         QWriteLocker lock(&m_Computer->lock);
         changed = m_Computer->updateAppList(appList);
         return true;
@@ -513,8 +559,17 @@ QVector<NvComputer*> ComputerManager::getComputers()
 {
     QReadLocker lock(&m_Lock);
 
-    // Return a sorted host list
-    auto hosts = QVector<NvComputer*>::fromList(m_KnownHosts.values());
+    // Retired managed hosts remain allocated for any AppModel or Session that
+    // still holds their pointer, but new models and index lookups don't expose
+    // them until a fresh lease activates them again.
+    QVector<NvComputer*> hosts;
+    hosts.reserve(m_KnownHosts.size());
+    for (NvComputer* computer : std::as_const(m_KnownHosts)) {
+        QReadLocker computerLock(&computer->lock);
+        if (!computer->managed || computer->managedAccessActive) {
+            hosts.append(computer);
+        }
+    }
     std::stable_sort(hosts.begin(), hosts.end(), [](const NvComputer* host1, const NvComputer* host2) {
         return host1->name.toLower() < host2->name.toLower();
     });
@@ -1080,12 +1135,20 @@ private:
                         computer = manager->m_KnownHosts.value(uuid);
                         if (computer) {
                             bool certificateMatches;
+                            bool alreadyManaged;
+                            bool managedAccessActive;
                             {
                                 QReadLocker computerLock(&computer->lock);
                                 certificateMatches =
                                     computer->serverCert.toDer() == certificate.toDer();
+                                alreadyManaged = computer->managed;
+                                managedAccessActive = computer->managedAccessActive;
                             }
-                            if (!certificateMatches) {
+                            if (!alreadyManaged) {
+                                completionError = ComputerManager::tr(
+                                    "This host already exists as a normal host. Remove the "
+                                    "saved host entry before connecting through managed access.");
+                            } else if (managedAccessActive && !certificateMatches) {
                                 completionError = ComputerManager::tr(
                                     "This host has a different saved certificate. Review and "
                                     "remove the old host entry before reconnecting.");
@@ -1093,6 +1156,9 @@ private:
                                 computer->update(*incoming);
                                 QWriteLocker computerLock(&computer->lock);
                                 computer->managed = true;
+                                computer->managedAccessActive = true;
+                                computer->managedBackend = backend;
+                                computer->managedLease = requestId;
                                 computer->pinnedAddress = address;
                                 computer->activeAddress = address;
                                 computer->activeHttpsPort = httpsPort;
@@ -1153,6 +1219,9 @@ private:
             return;
         }
         incoming->managed = true;
+        incoming->managedAccessActive = true;
+        incoming->managedBackend = m_Backend;
+        incoming->managedLease = m_RequestId;
         incoming->manualAddress = m_Address;
         incoming->localAddress = NvAddress();
         incoming->remoteAddress = NvAddress();
@@ -1187,6 +1256,30 @@ void ComputerManager::cancelManagedRequest(QString backend, QString requestId)
 {
     QWriteLocker lock(&m_Lock);
     m_PendingManagedRequests.remove(managedRequestKey(backend, requestId));
+}
+
+void ComputerManager::retireManagedHosts(QString backend)
+{
+    QVector<NvComputer*> retired;
+    {
+        QReadLocker managerLock(&m_Lock);
+        for (NvComputer* computer : std::as_const(m_KnownHosts)) {
+            QWriteLocker computerLock(&computer->lock);
+            if (!computer->managed || !computer->managedAccessActive ||
+                computer->managedBackend != backend) {
+                continue;
+            }
+            computer->managedAccessActive = false;
+            computer->managedLease.clear();
+            retired.append(computer);
+        }
+    }
+
+    // Signal after releasing all locks. ComputerModel will reset because
+    // getComputers() now filters these inactive objects.
+    for (NvComputer* computer : std::as_const(retired)) {
+        emit computerStateChanged(computer);
+    }
 }
 
 QString ComputerManager::generatePinString()

@@ -24,7 +24,7 @@ function Assert-NoReparseSegments([string]$Path) {
                 throw "Refusing to operate through a reparse point: $candidate"
             }
         }
-        $parent = Split-Path -LiteralPath $candidate -Parent
+        $parent = [IO.Path]::GetDirectoryName($candidate)
         if ([string]::IsNullOrEmpty($parent) -or $parent -eq $candidate) {
             break
         }

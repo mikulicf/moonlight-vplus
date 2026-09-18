@@ -44,7 +44,8 @@ type machineResponse struct {
 }
 
 type leaseResponse struct {
-	LeaseID string `json:"lease_id"`
+	LeaseID   string `json:"lease_id"`
+	ExpiresAt int64  `json:"expires_at"`
 }
 
 func newTestEnvironment(t *testing.T) *testEnvironment {

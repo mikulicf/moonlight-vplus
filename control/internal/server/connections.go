@@ -88,12 +88,12 @@ func (s *Server) connectMachine(w http.ResponseWriter, r *http.Request) {
 	result, err := s.Store.DB.Exec(`INSERT INTO leases(id,session_hash,machine_id,fingerprint,certificate,expires)
 	 SELECT ?,?,?,?,?,?
 	 WHERE EXISTS(SELECT 1 FROM grants g JOIN users u ON u.id=g.user_id JOIN machines m ON m.id=g.machine_id JOIN sessions s ON s.user_id=u.id WHERE g.user_id=? AND g.machine_id=? AND s.token_hash=? AND s.expires>? AND u.disabled=0 AND m.disabled=0)
-	 AND (EXISTS(SELECT 1 FROM leases WHERE session_hash=? AND machine_id=? AND fingerprint=?)
+	 AND (EXISTS(SELECT 1 FROM leases WHERE session_hash=? AND machine_id=? AND fingerprint=? AND expires>?)
 	      OR (SELECT COUNT(*) FROM leases WHERE machine_id=? AND expires>?) < ?)
 	 ON CONFLICT(session_hash,machine_id,fingerprint) DO UPDATE SET certificate=excluded.certificate,expires=excluded.expires`,
 		id, p.Session, m.ID, fingerprint, cert, expires,
 		p.User.ID, m.ID, p.Session, now,
-		p.Session, m.ID, fingerprint, m.ID, now, maxActiveLeasesPerMachine)
+		p.Session, m.ID, fingerprint, now, m.ID, now, maxActiveLeasesPerMachine)
 	if dbError(w, err) {
 		return
 	}
@@ -139,7 +139,7 @@ func (s *Server) renew(w http.ResponseWriter, r *http.Request) {
 	if expires > certificateExpiry {
 		expires = certificateExpiry
 	}
-	result, err := s.Store.DB.Exec(`UPDATE leases SET expires=? WHERE id=? AND session_hash=? AND certificate=? AND fingerprint=? AND EXISTS(SELECT 1 FROM grants g JOIN users u ON u.id=g.user_id JOIN machines m ON m.id=g.machine_id JOIN sessions s ON s.user_id=u.id WHERE g.user_id=? AND g.machine_id=leases.machine_id AND s.token_hash=? AND s.expires>? AND u.disabled=0 AND m.disabled=0)`, expires, r.PathValue("id"), p.Session, storedCertificate, storedFingerprint, p.User.ID, p.Session, now)
+	result, err := s.Store.DB.Exec(`UPDATE leases SET expires=? WHERE id=? AND session_hash=? AND certificate=? AND fingerprint=? AND expires>? AND EXISTS(SELECT 1 FROM grants g JOIN users u ON u.id=g.user_id JOIN machines m ON m.id=g.machine_id JOIN sessions s ON s.user_id=u.id WHERE g.user_id=? AND g.machine_id=leases.machine_id AND s.token_hash=? AND s.expires>? AND u.disabled=0 AND m.disabled=0)`, expires, r.PathValue("id"), p.Session, storedCertificate, storedFingerprint, now, p.User.ID, p.Session, now)
 	if dbError(w, err) {
 		return
 	}

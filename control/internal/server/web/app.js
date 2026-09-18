@@ -439,6 +439,7 @@
 
   byID("create-machine-form").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const form = event.currentTarget;
     const payload = {
       name: byID("new-machine-name").value,
       address: byID("new-machine-address").value,
@@ -447,7 +448,7 @@
     };
     try {
       const result = await api("/v1/admin/machines", { method: "POST", body: payload });
-      event.currentTarget.reset();
+      form.reset();
       byID("new-machine-http").value = "47989";
       byID("new-machine-https").value = "47984";
       if (!result || typeof result.host_token !== "string" || !result.host_token) {

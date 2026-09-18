@@ -71,7 +71,7 @@ function Assert-NoReparseSegments([string]$Path) {
                 throw "Reparse points are not allowed in installer paths: $candidate"
             }
         }
-        $parent = Split-Path -LiteralPath $candidate -Parent
+        $parent = [IO.Path]::GetDirectoryName($candidate)
         if ([string]::IsNullOrEmpty($parent) -or $parent -eq $candidate) {
             break
         }
@@ -104,15 +104,19 @@ function Resolve-AccountSid([string]$Account) {
     }
 }
 
-function Assert-DedicatedApolloAccount([Security.Principal.SecurityIdentifier]$Sid) {
+function Assert-SupportedApolloAccount([Security.Principal.SecurityIdentifier]$Sid) {
+    if ($Sid.Value -eq 'S-1-5-18') {
+        # Apollo's Windows service wrapper normally runs as LocalSystem and
+        # launches the console-session process with a duplicated SYSTEM token.
+        return
+    }
     $forbidden = @(
-        'S-1-5-18',
         'S-1-5-19',
         'S-1-5-20',
         'S-1-5-32-544'
     )
     if ($forbidden -contains $Sid.Value) {
-        throw 'ApolloReadAccount must be a dedicated non-administrator service account, not a built-in service or Administrators identity.'
+        throw 'ApolloReadAccount must be LocalSystem or a dedicated non-administrator account, not LocalService, NetworkService, or Administrators.'
     }
 
     $localGroupCommand = Get-Command Get-LocalGroupMember -ErrorAction SilentlyContinue
@@ -152,7 +156,7 @@ function Set-PrivateDirectoryAcl([string]$Path, [Security.Principal.SecurityIden
     $none = [Security.AccessControl.PropagationFlags]::None
     Add-FileSystemRule $acl $systemSid ([Security.AccessControl.FileSystemRights]::FullControl) $inherit $none
     Add-FileSystemRule $acl $administratorsSid ([Security.AccessControl.FileSystemRights]::FullControl) $inherit $none
-    if ($AllowApolloTraverse) {
+    if ($AllowApolloTraverse -and $ApolloSid.Value -ne $systemSid.Value) {
         Add-FileSystemRule $acl $ApolloSid ([Security.AccessControl.FileSystemRights]::ExecuteFile) ([Security.AccessControl.InheritanceFlags]::None) $none
     }
     Set-Acl -LiteralPath $Path -AclObject $acl
@@ -168,7 +172,9 @@ function Set-PolicyDirectoryAcl([string]$Path, [Security.Principal.SecurityIdent
     $none = [Security.AccessControl.PropagationFlags]::None
     Add-FileSystemRule $acl $systemSid ([Security.AccessControl.FileSystemRights]::FullControl) $inherit $none
     Add-FileSystemRule $acl $administratorsSid ([Security.AccessControl.FileSystemRights]::FullControl) $inherit $none
-    Add-FileSystemRule $acl $ApolloSid ([Security.AccessControl.FileSystemRights]::ReadAndExecute) $inherit $none
+    if ($ApolloSid.Value -ne $systemSid.Value) {
+        Add-FileSystemRule $acl $ApolloSid ([Security.AccessControl.FileSystemRights]::ReadAndExecute) $inherit $none
+    }
     Set-Acl -LiteralPath $Path -AclObject $acl
 }
 
@@ -188,7 +194,7 @@ function Set-PrivateFileAcl([string]$Path) {
 function Write-Utf8FileAtomic([string]$Path, [string]$Contents) {
     Assert-UnderInstallRoot $Path
     Assert-NoReparseSegments $Path
-    $temporary = Join-Path (Split-Path -LiteralPath $Path -Parent) ('.write-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+    $temporary = Join-Path ([IO.Path]::GetDirectoryName($Path)) ('.write-' + [Guid]::NewGuid().ToString('N') + '.tmp')
     Assert-UnderInstallRoot $temporary
     try {
         [IO.File]::WriteAllText($temporary, $Contents, (New-Object Text.UTF8Encoding($false)))
@@ -227,7 +233,7 @@ function Set-ApolloDirective([string]$Contents, [string]$Value) {
 function Write-ApolloConfigAtomic([string]$Path, [string]$Contents) {
     Assert-NoReparseSegments $Path
     $originalAcl = Get-Acl -LiteralPath $Path
-    $directory = Split-Path -LiteralPath $Path -Parent
+    $directory = [IO.Path]::GetDirectoryName($Path)
     $temporary = Join-Path $directory ('.moonlight-managed-' + [Guid]::NewGuid().ToString('N') + '.tmp')
     Assert-NoReparseSegments $temporary
     try {
@@ -315,7 +321,7 @@ if ($now -lt $certificate.NotBefore -or $now -gt $certificate.NotAfter) {
 }
 
 $apolloSid = Resolve-AccountSid $ApolloReadAccount
-Assert-DedicatedApolloAccount $apolloSid
+Assert-SupportedApolloAccount $apolloSid
 $apolloService = Get-CimInstance Win32_Service -Filter ("Name='{0}'" -f $ApolloServiceName.Replace("'", "''"))
 if ($null -eq $apolloService) {
     throw "Apollo service was not found: $ApolloServiceName"

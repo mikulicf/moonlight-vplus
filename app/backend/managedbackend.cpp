@@ -167,6 +167,7 @@ void ManagedBackend::signIn(QString address, QString username, QString password)
 void ManagedBackend::clearSession()
 {
     m_Computers->cancelManagedRequest(m_BackendUrl, m_PendingLease);
+    m_Computers->retireManagedHosts(m_BackendUrl);
     ++m_Generation;
     m_Token.fill('\0');
     m_Token.clear();
@@ -293,6 +294,7 @@ void ManagedBackend::renewLeases()
 void ManagedBackend::releaseConnections()
 {
     m_Computers->cancelManagedRequest(m_BackendUrl, m_PendingLease);
+    m_Computers->retireManagedHosts(m_BackendUrl);
     ++m_ConnectionGeneration;
     m_PendingLease.clear();
     if (!m_ConnectingMachine.isEmpty()) {

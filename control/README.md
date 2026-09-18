@@ -46,7 +46,7 @@ The agent JSON accepts these exact fields:
 }
 ```
 
-`ca_file` is an optional seventh field for an operator-managed private CA. The backend URL must be an HTTPS origin without a path, credentials, query, or fragment. The agent requires a valid TLS chain and does not follow redirects. Decide DNS, certificate issuance, renewal, and any private-CA installation for each host environment before enrollment; do not disable certificate verification.
+`ca_file` is an optional sixth field for an operator-managed private CA. The backend URL must be an HTTPS origin without a path, credentials, query, or fragment. The agent requires a valid TLS chain and does not follow redirects. Decide DNS, certificate issuance, renewal, and any private-CA installation for each host environment before enrollment; do not disable certificate verification.
 
 `server_certificate_file` must contain exactly Apollo's single PEM server certificate. `policy_file` must be writable by the agent and readable by Apollo, with permissions limited to those services and administrators. Run `moonlight-agent -config <absolute-agent-config-path>` under the host service manager. On Windows it supports the service name `MoonlightManagedHostAgent`; service installation, account choice, and filesystem ACLs remain operator-specific.
 
@@ -62,14 +62,16 @@ Build `moonlight-agent.exe` locally from this repository and install the patched
   -AgentExecutable '<absolute-path-to-moonlight-agent.exe>' `
   -ApolloConfig '<absolute-path-to-apollo-config>' `
   -ServerCertificate '<absolute-path-to-apollo-server-certificate>' `
-  -ApolloReadAccount '<dedicated-apollo-service-account>'
+  -ApolloReadAccount '<account-running-apollo-service>'
 ```
 
 `HttpPort` defaults to Apollo's protocol default, 47989. Override it only when Apollo uses a different base HTTP port. `ApolloServiceName` defaults to `ApolloService` and can be supplied when the installed service has another name.
 
-Apollo must run under the dedicated non-administrator account passed as `ApolloReadAccount`. The installer rejects LocalSystem, built-in service identities, the Administrators identity, and direct local Administrators members because those identities cannot be limited to read-only policy access. Reconfigure and verify the Apollo service account before installation.
+`ApolloReadAccount` must match the account that actually runs `ApolloService`. LocalSystem is supported and is Apollo's normal Windows architecture: its service wrapper duplicates its SYSTEM token into the interactive console session before launching Apollo. Do not reconfigure that service merely to create a separate policy reader. An operator-specific dedicated non-administrator account is also accepted when the Apollo service already runs under it. LocalService, NetworkService, the Administrators identity, and direct local Administrators members are rejected.
 
-The installer creates `%ProgramData%\MoonlightManagedAccess` with inheritance disabled and ownership assigned to SYSTEM. SYSTEM and Administrators receive full control. Apollo receives traversal on the root and read/execute access only on the policy directory; it receives no write access to the agent binary, secret configuration, backups, or policy. The agent service runs as LocalSystem, starts automatically, and has bounded restart recovery actions. The installer rejects reparse points, copies and hash-checks the agent, writes the enrollment token only into the protected agent JSON, and never prints it.
+The installer creates `%ProgramData%\MoonlightManagedAccess` with inheritance disabled and ownership assigned to SYSTEM. SYSTEM and Administrators receive full control. When Apollo uses a distinct non-administrator account, that account receives traversal on the root and read/execute access only on the policy directory. When Apollo uses LocalSystem, no duplicate read-only ACL is added: Apollo and the agent are both trusted SYSTEM daemons and necessarily retain full access. The agent service runs as LocalSystem, starts automatically, and has bounded restart recovery actions. The installer rejects reparse points, copies and hash-checks the agent, writes the enrollment token only into the protected agent JSON, and never prints it.
+
+This host design trusts the Apollo daemon, managed-access agent, and local administrators. The Windows account exposed in an interactive streamed session must remain a non-administrator; an interactive administrator can edit SYSTEM-protected policy and secrets and therefore bypass this local boundary.
 
 Apollo is stopped before its configuration changes. The installer backs up the configuration inside the protected root and updates only the `managed_policy_file` directive, preserving every other line. It restarts Apollo and requires `/serverinfo` to report `ManagedAccessProtocol` 1 before registering and starting the agent. If that check or agent startup fails, it removes a partial agent service, restores the exact backup, and restarts Apollo with its old configuration.
 

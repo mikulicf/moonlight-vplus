@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/">
+        <file alias="gui/ManagedFileDialog.qml">gui/qt5/ManagedFileDialog.qml</file>
+    </qresource>
+</RCC>
